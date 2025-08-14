@@ -49,7 +49,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -205,6 +207,9 @@ fun LogCard(
         animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
         finishedListener = { showLogAnim = true }
     )
+    // 删除分类
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    val typeToDelete = remember { mutableStateListOf<String>() }
 
     @Composable
     fun LogItemRow(
@@ -311,10 +316,8 @@ fun LogCard(
                     if (type != selectedType.value) {
                         DropdownMenuItem(
                             text = { Text(type) },
-                            onClick = {
-                                selectedType.value = type
-                                expanded = false
-                            }
+                            onClick = { selectedType.value = type
+                                expanded = false }
                         )
                     }
                 }
@@ -324,6 +327,17 @@ fun LogCard(
                 }) {
                     Text(
                         text = "添加分类",
+                        fontSize = 18.sp,
+                        fontStyle = FontStyle.Italic,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                TextButton(onClick = {
+                    showDeleteDialog = true
+                    expanded = false
+                }) {
+                    Text(
+                        text = "删除分类",
                         fontSize = 18.sp,
                         fontStyle = FontStyle.Italic,
                         fontWeight = FontWeight.Bold
@@ -352,7 +366,7 @@ fun LogCard(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-//            .scale(boxScale) TODO: 记得改回来
+            .scale(boxScale)
                 .padding(25.dp)
                 .clip(RoundedCornerShape(16.dp))     // 圆角
                 .background(
@@ -365,74 +379,120 @@ fun LogCard(
             LazyColumn(
                 modifier = Modifier
                     .padding(20.dp)
-                    //                    .scale(logScale)
+                                        .scale(logScale)
                     .fillMaxSize()
                     .clip(RoundedCornerShape(16.dp))
                     .background(darkenColor(MaterialTheme.colorScheme.primaryContainer, 0.1f))
                     .padding(10.dp)
             ) {
-                val sortedLogList = logList.reversed().sortedByDescending { it.time }
-                val okLog = mutableStateListOf<Int>()
-                sortedLogList.forEachIndexed { index, log ->
-                    if (okLog.contains(index) || log.type != selectedType.value) return@forEachIndexed // 排除已显示过和不在此种类的Log
-                    // 找到所有和当前 log 时间相同的项
-                    val sameTimeItems = sortedLogList.withIndex()
-                        .filter { (i, it) ->
-                            it.time == log.time && it.type == selectedType.value && i !in okLog
-                        }
-                        .toList()
-                    // 排除：已显示过，类别不同，时间不同
-                    if (sameTimeItems.size > 1) { // 至少两个才算重复
+                val selected = selectedType.value
+
+                // 按时间降序排列日志
+                val sortedLogs = logList.sortedByDescending { it.time }
+
+                // 原来的排序得到不可变列表 -> 转成可变列表
+                val filteredLogs = sortedLogs.filter { it.type == selected }.toMutableList()
+
+                val scoreList = getAllJsonList(context)
+                val scoreDates = mutableSetOf<String>()
+
+                for (i in 0 until scoreList.length()) {
+                    val obj = scoreList.getJSONObject(i)
+                    val date = obj.getString("date")
+                    scoreDates.add(date)
+                }
+
+                val existingDates = filteredLogs.map { it.time }.toSet()
+                val missingDates = scoreDates - existingDates
+
+                // 插入“虚拟日志”
+                missingDates.forEach { date ->
+                    filteredLogs.add(LogData(time = date, type = selected, head = "", content = ""))
+                }
+
+                // 最后按时间排序
+                val sortedLogsWithScores = filteredLogs.sortedByDescending { it.time }
+
+                // 按时间分组
+                val groupedByTime: Map<String, List<IndexedValue<LogData>>> =
+                    sortedLogsWithScores.withIndex()
+                        .filter { it.value.type == selected }
+                        .groupBy { it.value.time }
+
+               // 按时间顺序处理（降序）
+                groupedByTime.keys
+                    .sortedDescending()
+                    .forEach { time ->
+                        val entries = groupedByTime[time] ?: emptyList()
+
+                        // Time header + Tap 成绩（只显示一次）
                         item {
-                            Row {
-                                Text(text = log.time)
-                                Spacer(modifier = Modifier.weight(1f))
-                                Box(
-                                    modifier = Modifier
-                                        .background(
-                                            darkenColor(
-                                                MaterialTheme.colorScheme.primaryContainer,
-                                                0.15f
-                                            )
-                                        )
-                                        .size(130.dp, 20.dp)
-                                ) {
-                                    Row {
-                                        Text("Tap:", fontSize = 13.sp, color = Color.Blue)
-                                        Spacer(modifier = Modifier.weight(1f))
-                                        val data = loadDayData(context, log.time) ?: Pair(-1, -1f)
-                                        if (data.first >= 0) {
-                                            Text("${data.first}得分")
-                                            Spacer(modifier = Modifier.weight(1f))
-                                            Text("${String.format(Locale.CHINA, "%.2f", data.second)}秒")
-                                        } else {
-                                            Text("今天暂无成绩", fontSize = 13.sp)
-                                        }
-                                    }
-                                } // 显示Tap成绩
-                            }
+                            TimeHeaderWithTapBox(
+                                time = time,
+                                context = context,
+                                loadDayData = ::loadDayData // 传入函数引用，便于测试/复用
+                            )
                         }
-                        sameTimeItems.forEach { (i, item) ->
-                            Log.d("显示Log", "item: $item, selectedType: ${selectedType.value}")
-                            okLog.add(i)
-                            item {
-                                Column {
-                                    LogItemRow(item, sameTimeItems.last() == item)
+
+                        // 如果同一时间有多条（重复），则逐条渲染 LogItemRow；否则单条渲染也没问题
+                        entries.reversed().forEachIndexed { idx, indexedValue ->
+                            val log = indexedValue.value
+                            val isLastInGroup = idx == entries.size - 1
+                            if (log.content.isNotBlank() && log.head.isNotBlank()) {
+                                item {
+                                    Column {
+                                        LogItemRow(log, isLastInGroup)
+                                    }
                                 }
                             }
                         }
-                    } else {
-                        okLog.add(index)
-                        item {
-                            Column {
-                                Text(text = log.time)
-                                LogItemRow(log, true)
+                    }
+            }
+        }
+    }
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("确认删除") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Text("请选择要删除的分类：")
+                    LazyColumn(modifier = Modifier.height(50.dp * 3).background(Color.LightGray)) {
+                        typeList.forEach {
+                            item {
+                                Button(
+                                    onClick = {
+                                        typeToDelete.add(it)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (typeToDelete.contains(it)) Color.Red else Color.Gray
+                                    )
+                                ) {
+                                    Text(text = it)
+                                }
                             }
                         }
                     }
                 }
+                   },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (typeToDelete.isNotEmpty()) {
+                        typeToDelete.forEach {
+                            if (typeList.contains(it)) typeList.remove(it)
+                        }
+                        showDeleteDialog = false
+                        typeToDelete.clear()
+                    }
+                }) { Text("删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    typeToDelete.clear()
+                }) { Text("取消") }
             }
-        }
+        )
     }
     FloatAddLog(
         showOverlay = showOverlay,
@@ -470,6 +530,8 @@ fun LogCard(
         }
     }
     val primaryContainer = MaterialTheme.colorScheme.primaryContainer
+    val boxColor by remember { mutableStateOf(primaryContainer) }
+    var emojiValue by remember { mutableStateOf("") }
     if (showEmojiChoice.value) {
         ModalBottomSheet(
             onDismissRequest = { showEmojiChoice.value = false },
@@ -502,7 +564,7 @@ fun LogCard(
                             "💀", "☠️", "💩", "🤡", "👹", "👺", "👻", "👽", "👾", "🤖",
                             "🥷", "🫒", "🫘", "🐢"
                         ).forEach {
-                            var boxColor by remember { mutableStateOf(primaryContainer) }
+
                             Box(
                                 modifier = Modifier
                                     .background(
@@ -515,6 +577,32 @@ fun LogCard(
                                     }
                             ) {
                                 Text(text = it, fontSize = 28.sp)
+                            }
+                        }
+                        Row(
+                            modifier = Modifier
+                                .background(Color.Gray),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "添加",
+                                tint = Color.Green,
+                                modifier = Modifier.size(24.dp) // 设置大小
+                            )
+                            TextField(
+                                value = emojiValue,
+                                onValueChange = { emojiValue = it },
+                                modifier = Modifier.weight(2f)
+                            )
+                            Button(
+                                onClick = {
+                                    headEmoji.value = emojiValue
+                                    showEmojiChoice.value = false
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("使用")
                             }
                         }
                     }
@@ -972,4 +1060,50 @@ fun getLogFormJSONObject(jsonObj: Any): LogData {
         obj.getString("head"),
         obj.getString("content"), obj.getString("type")
     )
+}
+
+@Composable
+private fun TimeHeaderWithTapBox(
+    time: String,
+    context: Context,
+    loadDayData: (Context, String) -> Pair<Int, Float>?
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(text = time)
+        Spacer(modifier = Modifier.weight(1f))
+        TapScoreBox(time = time, context = context, loadDayData = loadDayData)
+    }
+}
+
+@Composable
+private fun TapScoreBox(
+    time: String,
+    context: Context,
+    loadDayData: (Context, String) -> Pair<Int, Float>?
+) {
+    // 使用和你原来一样的样式尺寸/背景
+    Box(
+        modifier = Modifier
+            .background(darkenColor(MaterialTheme.colorScheme.primaryContainer, 0.15f))
+            .size(140.dp, 20.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 6.dp)
+                .fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Tap:", fontSize = 13.sp, color = Color.Blue)
+            Spacer(modifier = Modifier.weight(1f))
+            val data = loadDayData(context, time) ?: Pair(-1, -1f)
+            if (data.first >= 0) {
+                Text("${data.first}得分")
+                Spacer(modifier = Modifier.weight(1f))
+                Text(String.format(Locale.CHINA, "%.2f", data.second) + "s")
+            } else {
+                Text("今天暂无成绩", fontSize = 13.sp)
+            }
+        }
+    }
 }
