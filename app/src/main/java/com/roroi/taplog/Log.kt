@@ -255,7 +255,7 @@ fun LogCard(
                     }
                     Text(
                         text = "${item.head}: ${item.content}",
-                        fontSize = 20.sp,
+                        fontSize = 16.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         softWrap = false,
