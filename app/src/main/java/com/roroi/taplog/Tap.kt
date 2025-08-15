@@ -175,7 +175,7 @@ fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
             Log.d("日志", "今天没有记录")
         }
         if (!isPre) {
-            delay(2000)
+            delay(800)
         }
         resetGame()
     }
