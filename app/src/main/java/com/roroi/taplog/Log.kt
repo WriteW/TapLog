@@ -230,7 +230,6 @@ fun FabTime(
     var continuation by remember { mutableStateOf<Continuation<Boolean>?>(null) }
     var reasonForTimer by remember { mutableStateOf("") }
     var targetTimerReason by remember { mutableStateOf("") }
-    var startTimeL by remember { mutableLongStateOf(0L) }
     var endTimeL by remember { mutableLongStateOf(0L) }
 
     if (showDialogForContent) {
@@ -250,7 +249,6 @@ fun FabTime(
                     reasonForTimer = ""
                     // 添加日志
                     val startTime = SimpleDateFormat("HH:MM:ss").format(Date())
-                    startTimeL = System.currentTimeMillis()
                     logList.add(
                         LogData(
                             time = now().toString(),
@@ -289,7 +287,7 @@ fun FabTime(
                 // 计时结束
                 endTimeL = System.currentTimeMillis()
                 val endTime = SimpleDateFormat("HH:MM:ss").format(Date())
-                val lastTime = ((endTimeL - startTimeL) / 1000).toInt()
+                val lastTime = ((endTimeL - startTimestamp.longValue) / 1000).toInt()
                 val targetLastTime = if (lastTime < 60) "$lastTime s" else if (lastTime < 3600) "${lastTime / 60} min ${lastTime % 60} s" else "${lastTime / 3600} h ${(lastTime % 3600) / 60} min ${lastTime % 60} s"
                 logList.add(
                     LogData(
