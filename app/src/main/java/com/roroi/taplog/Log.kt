@@ -100,6 +100,7 @@ import androidx.compose.ui.tooling.preview.Wallpapers
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.roroi.taplog.ui.theme.TapLogTheme
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -116,6 +117,8 @@ import java.util.Date
 import java.util.Locale
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
+import kotlin.reflect.full.memberProperties
+import kotlin.reflect.full.primaryConstructor
 
 class Log : ComponentActivity() {
     var logList = mutableStateListOf<LogData>()
@@ -123,12 +126,14 @@ class Log : ComponentActivity() {
     var timerExpanded = mutableStateOf(false)
     var timerStartTime = mutableLongStateOf(-1L)
     var selectedType = mutableStateOf("")
+    var scope: CoroutineScope? = null
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
+            scope = rememberCoroutineScope()
             TapLogTheme {
                 val mainColor = MaterialTheme.colorScheme.inversePrimary
                 val activity = LocalContext.current.findActivity()
@@ -158,7 +163,6 @@ class Log : ComponentActivity() {
                         val timerData = loadTimer(this@Log)
                         timerExpanded.value = timerData.first
                         timerStartTime.longValue = timerData.second
-
                         selectedType.value = typeList[0]
                     }
                 }
@@ -188,9 +192,12 @@ class Log : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        saveLog(this, logList)
-        saveType(this, typeList)
-        saveTimer(this, Pair(timerExpanded.value, timerStartTime.longValue))
+        val context = this
+        scope?.launch {
+            saveLog(context, logList)
+            saveType(context, typeList)
+            saveTimer(context, Pair(timerExpanded.value, timerStartTime.longValue))
+        }
     }
 }
 
@@ -596,7 +603,7 @@ fun LogCard(
                 val selected = selectedType.value
 
                 // 按时间降序排列日志
-                val sortedLogs = logList.sortedByDescending { it.time }
+                val sortedLogs = logList.toList().sortedByDescending { it.time }
 
                 // 原来的排序得到不可变列表 -> 转成可变列表
                 val filteredLogs = sortedLogs.filter { it.type == selected }.toMutableList()
@@ -851,9 +858,11 @@ fun lightenColor(color: Color, fraction: Float): Color {
 fun saveLog(context: Context, logList: SnapshotStateList<LogData>) {
     val f = File(context.getExternalFilesDir(null), "Log/data.json")
     f.parentFile?.mkdirs()
+    val logListCache = mutableStateListOf<LogData>()
+    logListCache.addAll(logList)
     val targetList = JSONArray()
-    for (i in 0 until logList.size) {
-        targetList.put(logList[i].toJSONObject())
+    for (i in 0 until logListCache.size) {
+        targetList.put(logListCache[i].toJSONObject())
     }
     f.writeText(targetList.toString())
     Log.d("Log内容", f.readText())
@@ -861,18 +870,20 @@ fun saveLog(context: Context, logList: SnapshotStateList<LogData>) {
 
 fun loadLog(context: Context, logList: SnapshotStateList<LogData>) {
     logList.clear()
+    val targetListA = mutableStateListOf<LogData>()
     val f = File(context.getExternalFilesDir(null), "Log/data.json")
     if (f.exists() && isJson(f.readText())) { // 有的话
         val targetList = JSONArray(f.readText())
         for (i in 0 until targetList.length()) {
             try {
                 val obj = getLogFormJSONObject(targetList[i])
-                logList.add(obj)
+                targetListA.add(obj)
             } catch (e: JSONException) {
                 Log.e("JSONLoad", "第 $i 项解析失败: ${e.localizedMessage}", e)
             }
         }
     }
+    logList.addAll(targetListA)
 }
 
 fun saveType(context: Context, typeList: SnapshotStateList<String>) {
@@ -1294,29 +1305,30 @@ data class LogData(
     val contentType: String = "normal"
 )
 
+val lDKClass = LogData::class
+val constructor = lDKClass.primaryConstructor!!
+
 fun LogData.toJSONObject(): JSONObject {
     val obj = JSONObject()
-    obj.put("time", time)
-    obj.put("head", head)
-    obj.put("content", content)
-    obj.put("type", type)
-    obj.put("contentType", contentType)
+
+    for (prop in lDKClass.memberProperties) {
+        obj.put(prop.name, prop.call(this))
+    }
     return obj
 }
 
 fun getLogFormJSONObject(jsonObj: Any): LogData {
     val obj = jsonObj as JSONObject
-    return LogData(
-        obj.getString("time"),
-        obj.getString("head"),
-        obj.getString("content"),
-        obj.getString("type"),
-        contentType = try {
-            obj.getString("contentType")
-        } catch (_: JSONException) {
-            "normal"
+
+    val args = constructor.parameters.associateWith { param ->
+        if(obj.has(param.name)) {
+            obj.get(param.name!!)
+        } else {
+            null
         }
-    )
+    }.filterValues { it != null }
+
+    return constructor.callBy(args)
 }
 
 @Composable
