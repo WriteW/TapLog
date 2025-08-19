@@ -127,6 +127,7 @@ class Log : ComponentActivity() {
     var timerStartTime = mutableLongStateOf(-1L)
     var selectedType = mutableStateOf("")
     var scope: CoroutineScope? = null
+    var lastSelectType = mutableStateOf("")
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -155,15 +156,17 @@ class Log : ComponentActivity() {
                 timerExpanded = remember { mutableStateOf(false) }
                 timerStartTime = remember { mutableLongStateOf(-1L) }
                 selectedType = remember { mutableStateOf("") }
+                lastSelectType = remember { mutableStateOf("") }
 
                 LaunchedEffect(Unit) {
                     withContext(Dispatchers.IO) {
                         loadLog(activity ?: return@withContext, logList)
                         loadType(activity, typeList)
-                        val timerData = loadTimer(this@Log)
-                        timerExpanded.value = timerData.first
-                        timerStartTime.longValue = timerData.second
-                        selectedType.value = typeList[0]
+                        val timerData = loadExtraData(this@Log, typeList)
+                        timerExpanded.value = timerData.first.first
+                        timerStartTime.longValue = timerData.first.second
+                        lastSelectType.value = timerData.second
+                        selectedType.value = lastSelectType.value.ifBlank { typeList[0] }
                     }
                 }
 
@@ -194,30 +197,37 @@ class Log : ComponentActivity() {
         super.onPause()
         val context = this
         scope?.launch {
-            saveLog(context, logList)
-            saveType(context, typeList)
-            saveTimer(context, Pair(timerExpanded.value, timerStartTime.longValue))
+            withContext(Dispatchers.IO) {
+                saveLog(context, logList)
+                saveType(context, typeList)
+                saveExtraData(context, Pair(timerExpanded.value, timerStartTime.longValue), selectedType.value)
+            }
         }
     }
 }
 
-fun saveTimer(context: Context, data: Pair<Boolean, Long>) {
+fun saveExtraData(context: Context, data: Pair<Boolean, Long>, selectType: String) {
     val f = File(context.getExternalFilesDir(null), "Log/timer.json")
     f.parentFile?.mkdirs()
     val targetData = JSONArray()
     targetData.put(data.first)
     targetData.put(data.second)
+    targetData.put(selectType)
     f.writeText(targetData.toString())
     Log.d("timer数据", f.readText())
 }
 
-fun loadTimer(context: Context): Pair<Boolean, Long> {
+fun loadExtraData(context: Context, typeList: SnapshotStateList<String>): Pair<Pair<Boolean, Long>, String> {
     val f = File(context.getExternalFilesDir(null), "Log/timer.json")
     return if (f.exists() && isJson(f.readText())) {
         val data = JSONArray(f.readText())
-        Pair(data.getBoolean(0), data.getLong(1))
+        try {
+            Pair(Pair(data.getBoolean(0), data.getLong(1)), data.getString(2))
+        } catch (_: JSONException) {
+            Pair(Pair(data.getBoolean(0), data.getLong(1)), "")
+        }
     } else {
-        Pair(false, -1L)
+        Pair(Pair(false, -1L), typeList[0])
     }
 }
 
@@ -255,7 +265,7 @@ fun FabTime(
                     targetTimerReason = reasonForTimer.ifBlank { "For fun" }
                     reasonForTimer = ""
                     // 添加日志
-                    val startTime = SimpleDateFormat("HH:MM:ss").format(Date())
+                    val startTime = SimpleDateFormat("HH:mm:ss").format(Date())
                     logList.add(
                         LogData(
                             time = now().toString(),
