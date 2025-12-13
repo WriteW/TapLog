@@ -66,4 +66,28 @@ object GlobalV {
     private fun saveGoods() {
         appContext?.let { DataRepository.saveGoods(it, goodsList) }
     }
+
+    // [新增] 更新任务：根据 ID 找到旧任务并替换
+    fun updateTask(newTask: Task) {
+        val index = taskList.indexOfFirst { it.id == newTask.id }
+        if (index != -1) {
+            taskList[index] = newTask
+            saveTasks()
+        } else {
+            addTask(newTask) // 如果找不到ID（理论上不可能），就当作新增
+        }
+    }
+
+    // [新增] 更新商品：商品没有 ID，我们需要给 Goods 加一个 ID 字段，或者根据 title 查找？
+    // 强烈建议：去 DataModels.kt 给 Goods 加一个 val id: String = UUID.randomUUID().toString()
+    // 假设你已经加了 ID (如果没有，请现在去加)
+    fun updateGoods(newGoods: Goods) {
+        val index = goodsList.indexOfFirst { it.id == newGoods.id }
+        if (index != -1) {
+            goodsList[index] = newGoods
+            saveGoods()
+        } else {
+            addGoods(newGoods)
+        }
+    }
 }

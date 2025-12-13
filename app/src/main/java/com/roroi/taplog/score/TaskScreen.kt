@@ -146,30 +146,68 @@ fun HomeScreen(
     onTaskClick: (Task) -> Unit,
     onTaskDelete: (Task) -> Unit,
     topBar: @Composable () -> Unit,
+    onEditTask: (Task) -> Unit,
 ) {
-    // 状态：当前准备删除哪个任务？如果是 null 代表没有弹窗
-    var taskToDelete by remember { mutableStateOf<Task?>(null) }
     val context = LocalContext.current
 
-    // 删除确认弹窗
-    if (taskToDelete != null) {
+    // 状态1：当前选中的任务（准备操作）
+    var selectedTask by remember { mutableStateOf<Task?>(null) }
+    // 状态2：是否显示删除确认框
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    // --- 弹窗逻辑 ---
+
+    // 1. 操作选择弹窗 (当选中了任务，且还没点删除时显示)
+    if (selectedTask != null && !showDeleteConfirm) {
         AlertDialog(
-            onDismissRequest = { taskToDelete = null },
-            title = { Text("删除任务") },
-            text = { Text("确定要删除 \"${taskToDelete?.title}\" 吗？此操作无法撤销。") },
+            onDismissRequest = { selectedTask = null },
+            title = { Text("操作任务") },
+            text = { Text("你想对 \"${selectedTask?.title}\" 做什么？") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        taskToDelete?.let { onTaskDelete(it) }
-                        taskToDelete = null
-                    }
-                ) { Text("删除", color = Color.Red) }
+                // 按钮：编辑
+                TextButton(onClick = {
+                    val taskToEdit = selectedTask
+                    selectedTask = null // 关闭弹窗
+                    taskToEdit?.let { onEditTask(it) } // 跳转编辑
+                }) { Text("编辑 ✏️") }
             },
             dismissButton = {
-                TextButton(onClick = { taskToDelete = null }) { Text("取消") }
+                // 按钮：删除 -> 切换到确认状态
+                TextButton(
+                    onClick = { showDeleteConfirm = true }
+                ) { Text("删除 🗑️", color = Color.Red) }
             }
         )
     }
+
+    // 2. 删除确认弹窗 (当选中了任务，且点了删除时显示)
+    if (selectedTask != null && showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteConfirm = false
+                selectedTask = null
+            },
+            title = { Text("确认删除") },
+            text = { Text("确定要删除 \"${selectedTask?.title}\" 吗？此操作无法撤销。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        selectedTask?.let { onTaskDelete(it) } // 执行删除
+                        showDeleteConfirm = false
+                        selectedTask = null
+                    }
+                ) { Text("确认删除", color = Color.Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    selectedTask = null
+                }) { Text("取消") }
+            }
+        )
+    }
+
+    // --- UI 布局 ---
     Scaffold(topBar = topBar) { innerPadding ->
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -177,7 +215,6 @@ fun HomeScreen(
                 start = 16.dp,
                 end = 16.dp,
                 top = innerPadding.calculateTopPadding() + 16.dp,
-                // 底部留出足够空间，避免被系统手势或不存在的导航栏遮挡
                 bottom = 80.dp
             ),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -191,13 +228,12 @@ fun HomeScreen(
                     task = task,
                     onTaskClick = onTaskClick,
                     onLongClick = {
-                        // 长按时，震动一下提升手感
-                        performRichHaptics(context, HapticType.FAILURE) // 借用一下Heavy Click震动
-                        taskToDelete = task // 弹出对话框
+                        performRichHaptics(context, HapticType.FAILURE)
+                        // [关键修复] 这里赋值给 selectedTask，才能触发上面的第一个弹窗
+                        selectedTask = task
                     }
                 )
             }
         }
     }
-
 }
