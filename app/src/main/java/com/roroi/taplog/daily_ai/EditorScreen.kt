@@ -165,7 +165,7 @@ fun EditorScreen(
                 ),
                 placeholder = {
                     Text(
-                        "记录当下的想法...",
+                        "江河入海，终归源头...",
                         color = Color.Gray.copy(alpha = 0.5f),
                         fontSize = 18.sp
                     )

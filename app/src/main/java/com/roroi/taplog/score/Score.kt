@@ -1,6 +1,7 @@
 package com.roroi.taplog.score
 
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -61,14 +62,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.roroi.taplog.R
 import com.roroi.taplog.ui.theme.TapLogTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.serialization.json.Json
 
 // --- 工具函数区域 ---
 
@@ -231,18 +235,18 @@ fun TapLogApp(
     }
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    if (currentRoute == "market") {
-                        navController.navigate("add_goods")
-                    } else {
-                        navController.navigate("add_task")
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
-            }
+            if (currentRoute == "home" || currentRoute == "market") FloatingActionButton(
+                    onClick = {
+                        if (currentRoute == "market") {
+                            navController.navigate("add_goods")
+                        } else {
+                            navController.navigate("add_task")
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add")
+                }
         }
     ) { innerPadding ->
         innerPadding
@@ -259,7 +263,15 @@ fun TapLogApp(
                         viewModel.addIncome(task.income)
                     },
                     onTaskDelete = { task -> viewModel.deleteTask(task) },
-                    topBar = { HomeTopBar() }
+                    topBar = { HomeTopBar() },
+                    onEditTask = { task ->
+                        // 1. 序列化 Task -> JSON
+                        val taskJson = Json.encodeToString(task)
+                        // 2. URL 编码 (防止 JSON 中的 {}, "" 等字符破坏路由格式)
+                        val encodedJson = Uri.encode(taskJson)
+                        // 3. 导航并传递参数
+                        navController.navigate("add_task?task=$encodedJson")
+                    }
                 )
             }
             composable("market") {
@@ -276,21 +288,51 @@ fun TapLogApp(
                     onGoodsDelete = { goods ->
                         viewModel.deleteGoods(goods)
                     },
-                    topBar = { HomeTopBar() }
+                    topBar = { HomeTopBar() },
+                    onEditGoods = { goods ->
+                        val goodsJson = Json.encodeToString(goods)
+                        val encodedJson = Uri.encode(goodsJson)
+                        navController.navigate("add_goods?goods=$encodedJson")
+                    },
                 )
 
             }
-            // --- 新增：添加任务页面 ---
-            composable("add_task") {
+            // --- 修改：添加任务页面 (接收参数) ---
+            composable(
+                route = "add_task?task={task}", // 定义路由结构
+                arguments = listOf(
+                    navArgument("task") {
+                        type = NavType.StringType
+                        nullable = true // 允许为空（新增模式）
+                        defaultValue = null
+                    }
+                )
+            ) { backStackEntry ->
+                // 获取参数
+                val taskJson = backStackEntry.arguments?.getString("task")
+
                 AddTaskApp(
-                    onBack = { navController.popBackStack() } // 把"返回"操作传进去
+                    onBack = { navController.popBackStack() },
+                    initialTaskJson = taskJson // 将 JSON 传给页面
                 )
             }
 
-            // --- 新增：添加商品页面 ---
-            composable("add_goods") {
+            // --- 修改：添加商品页面 (接收参数) ---
+            composable(
+                route = "add_goods?goods={goods}",
+                arguments = listOf(
+                    navArgument("goods") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    }
+                )
+            ) { backStackEntry ->
+                val goodsJson = backStackEntry.arguments?.getString("goods")
+
                 AddGoodsApp(
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    initialGoodsJson = goodsJson // 将 JSON 传给页面
                 )
             }
         }

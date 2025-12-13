@@ -1,6 +1,7 @@
 package com.roroi.taplog.score
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.serialization.Serializable
 import java.util.UUID
 
@@ -44,21 +45,31 @@ data class Task(
 
 @Serializable
 data class Goods(
+    val id: String = UUID.randomUUID().toString(),
     val title: String,
     val description: String,
-    val price: Int
+    val price: Int,
+    var colorArgb: Int? = null,
 ) {
     // 颜色逻辑保持不变，不序列化
     fun getColor(): Color {
-        return when {
-            price <= 30 -> Difficulty.EASY.getColor()
-            price <= 60 -> Difficulty.NORMAL.getColor()
-            price <= 120 -> Difficulty.HARD.getColor()
-            else -> Difficulty.EPIC.getColor()
-        }
+        return Color(colorArgb ?: PresetColors.drop(1).random()!!.toArgb())
     }
 }
 
+// 4. 定义一组预设颜色供选择器使用
+val PresetColors = listOf(
+    null, // 代表 "随机/自动"
+    Color(0xFFF44336), // 红
+    Color(0xFFFF9800), // 橙
+    Color(0xFFFFEB3B), // 黄
+    Color(0xFF4CAF50), // 绿
+    Color(0xFF2196F3), // 蓝
+    Color(0xFF9C27B0), // 紫
+    Color(0xFFE91E63), // 粉
+    Color(0xFF795548), // 棕
+    Color(0xFF607D8B)  // 灰
+)
 @Serializable
 data class TaskScore(
     val score: Int = 0,

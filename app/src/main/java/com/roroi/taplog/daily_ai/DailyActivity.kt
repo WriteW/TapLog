@@ -46,8 +46,8 @@ class DailyActivity : ComponentActivity() {
                         imageUri = tempImageUri!!,
                         onDismiss = { showRatioDialog = false },
                         // 【修改】：接收 ratio 和 isLarge
-                        onConfirm = { ratio, isLarge ->
-                            viewModel.addImageEntry(tempImageUri!!, ratio, isLarge)
+                        onConfirm = { ratio, isLarge, cropParams ->
+                            viewModel.addImageEntry(tempImageUri!!, ratio, isLarge, cropParams)
                             showRatioDialog = false
                             tempImageUri = null
                         }

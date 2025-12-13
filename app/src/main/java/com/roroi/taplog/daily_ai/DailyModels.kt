@@ -7,12 +7,12 @@ enum class EntryType {
     TEXT, IMAGE
 }
 
-// 这里的 Enum 主要用于 UI Label，实际逻辑中我们增加了 isLarge 字段来控制
-enum class ImageRatio(val ratio: Float, val label: String) {
-    SQUARE(1f, "1:1"),
-    WIDE(2f, "2:1"),
-    LARGE(1f, "2:2") // 新增：比例虽是 1:1，但是大图
-}
+@Serializable
+data class CropParams(
+    val userScale: Float = 1f,
+    val userOffsetX: Float = 0f,
+    val userOffsetY: Float = 0f
+)
 
 @Serializable
 data class DailyEntry(
@@ -21,7 +21,8 @@ data class DailyEntry(
     val type: EntryType,
     val content: String,
     val imageRatio: Float = 1f,
-    val isLarge: Boolean = false // 【新增】标记是否为 2*2 大图
+    val isLarge: Boolean = false,
+    val cropParams: CropParams? = null // 【新增】保存裁剪参数
 )
 
 data class TimelineGroup(
