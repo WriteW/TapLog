@@ -1,5 +1,6 @@
 package com.roroi.taplog.score
 
+import android.app.Activity
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -23,29 +24,43 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.roroi.taplog.ui.theme.TapLogTheme
+import kotlinx.serialization.json.Json
+import java.util.UUID
 
 // 商品表单状态
-class AddGoodsState {
-    var title by mutableStateOf("")
-    var description by mutableStateOf("")
-    var price by mutableIntStateOf(30)
+class AddGoodsState(initialGoods: Goods?) { // [修改] 接收可选的初始数据
+    // 如果有初始数据，就用初始数据，否则用默认值
+    var id by mutableStateOf(initialGoods?.id ?: UUID.randomUUID().toString()) // 需保存 ID
+    var title by mutableStateOf(initialGoods?.title ?: "")
+    var description by mutableStateOf(initialGoods?.description ?: "")
+    var price by mutableIntStateOf(initialGoods?.price ?: 30)
+    var selectedColor by mutableStateOf<Int?>(initialGoods?.colorArgb) // [新增] 颜色状态
 
     fun toGoods(): Goods {
         return Goods(
+            id = id, // 保持 ID 不变
             title = title.ifBlank { "title" },
             description = description.ifBlank { "description" },
-            price = price
+            price = price,
+            colorArgb = selectedColor // [新增]
         )
     }
 }
 
-@Composable
-fun rememberAddGoodsState() = remember { AddGoodsState() }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddGoodsApp(onBack: () -> Unit) {
-    val state = rememberAddGoodsState()
+fun AddGoodsApp(onBack: () -> Unit, initialGoodsJson: String?) {
+    val activity = LocalActivity.current
+    // [新增] 尝试获取传递过来的 Goods 数据
+    val existingGoods = remember(initialGoodsJson) {
+        if (initialGoodsJson != null) {
+            try {
+                Json.decodeFromString<Goods>(initialGoodsJson)
+            } catch (e: Exception) { null }
+        } else null
+    }
+    val state = remember { AddGoodsState(existingGoods) }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var isAppVisible by remember { mutableStateOf(true) }
 
@@ -58,7 +73,7 @@ fun AddGoodsApp(onBack: () -> Unit) {
     }
 
     Scaffold(topBar = {
-        AddGoodsTopBar(onBack = onBack, state = state)
+        AddGoodsTopBar(onBack = onBack, state = state, existingGoods = existingGoods, activity = activity, initialGoodsJson = initialGoodsJson)
     }) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
             // 背景层 (复用 AddTask 的模糊背景逻辑，为了代码简洁这里简化写，
@@ -141,13 +156,12 @@ fun AddGoodsContent(state: AddGoodsState, modifier: Modifier = Modifier) {
             }
         }
 
-        // 提示信息
         item {
-            Text(
-                text = "颜色将根据价格自动生成：\n<10: 绿色, <20: 蓝色, <60: 紫色, >120: 金色",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray,
-                modifier = Modifier.padding(top = 16.dp)
+            Text("选择商品颜色", modifier = Modifier.padding(vertical = 8.dp))
+            // 假设你之前已经写好了 ColorSelector 组件
+            ColorSelector(
+                selectedColorArgb = state.selectedColor,
+                onColorSelected = { state.selectedColor = it }
             )
         }
     }
@@ -155,7 +169,7 @@ fun AddGoodsContent(state: AddGoodsState, modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddGoodsTopBar(onBack: () -> Unit, state: AddGoodsState) {
+fun AddGoodsTopBar(onBack: () -> Unit, state: AddGoodsState, existingGoods: Goods? = null, activity: Activity?, initialGoodsJson: String?) {
     CenterAlignedTopAppBar(
         title = { Text("Add Goods", fontWeight = FontWeight.Bold) },
         colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White.copy(0.85f)),
@@ -166,7 +180,11 @@ fun AddGoodsTopBar(onBack: () -> Unit, state: AddGoodsState) {
         },
         actions = {
             IconButton(onClick = {
-                GlobalV.addGoods(state.toGoods())
+                if (existingGoods != null) {
+                    GlobalV.updateGoods(state.toGoods())
+                } else {
+                    GlobalV.addGoods(state.toGoods())
+                }
                 onBack()
             }) {
                 Icon(Icons.Rounded.Check, contentDescription = "Save")
@@ -178,5 +196,5 @@ fun AddGoodsTopBar(onBack: () -> Unit, state: AddGoodsState) {
 @Preview
 @Composable
 fun PreviewAddGoods() {
-    TapLogTheme { AddGoodsApp(onBack = {}) }
+    TapLogTheme { AddGoodsApp(onBack = {}, "") }
 }

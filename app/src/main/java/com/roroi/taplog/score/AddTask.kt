@@ -48,6 +48,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.roroi.taplog.ui.theme.TapLogTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import kotlin.math.max
 
 const val SCALE_V = 1.7f
@@ -58,28 +59,29 @@ private const val SCALE_DOWN = 1f / DOWNSAMPLE_FACTOR
 // 1. 数据状态类 (ViewModel 的轻量替代)
 // ==========================================
 // 将表单状态封装起来，方便传递
-class AddTaskState {
-    var title by mutableStateOf("")
-    var description by mutableStateOf("")
-    var difficulty by mutableStateOf(Difficulty.EASY)
-    var income by mutableIntStateOf(10)
+// 找到 AddTaskState 类，完全替换为：
+
+class AddTaskState(initialTask: Task?) { // [修改] 这里接收参数
+    // 如果是编辑模式(initialTask不为空)，沿用旧ID；否则生成新ID
+    var id = initialTask?.id ?: java.util.UUID.randomUUID().toString()
+
+    var title by mutableStateOf(initialTask?.title ?: "")
+    var description by mutableStateOf(initialTask?.description ?: "")
+
+    // 如果有旧难度，就用旧的，否则默认 EASY
+    var difficulty by mutableStateOf(initialTask?.difficulty ?: Difficulty.EASY)
+    var income by mutableIntStateOf(initialTask?.income ?: 10)
 
     fun toTask(): Task {
         return Task(
+            id = id, // 保持ID不变
             title = title.ifBlank { "Title" },
             description = description.ifBlank { "Description." },
             difficulty = difficulty,
             income = income,
-//            useProgress = useProgress,
-//            currentProgress = currentProgress,
-//            targetProgress = targetProgress,
-//            unit = progressUnit
         )
     }
 }
-
-@Composable
-fun rememberAddTaskState() = remember { AddTaskState() }
 
 // ==========================================
 // 2. 主界面组件
@@ -87,8 +89,15 @@ fun rememberAddTaskState() = remember { AddTaskState() }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddTaskApp(onBack: () -> Unit) {
-    val state = rememberAddTaskState()
+fun AddTaskApp(onBack: () -> Unit, initialTaskJson: String?) {
+    val existingTask = remember(initialTaskJson) {
+        if (initialTaskJson != null) {
+            try {
+                Json.decodeFromString<Task>(initialTaskJson)
+            } catch (e: Exception) { null }
+        } else null
+    }
+    val state = remember { AddTaskState(existingTask) }
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var isAppVisible by remember { mutableStateOf(true) }
 
@@ -102,8 +111,13 @@ fun AddTaskApp(onBack: () -> Unit) {
 
     Scaffold(topBar = {
         AddTaskTopBar(onBack = onBack, onSave = {
-            GlobalV.addTask(state.toTask())
-            onBack()
+            // 保存逻辑
+            if (existingTask != null) {
+                GlobalV.updateTask(state.toTask())
+            } else {
+                GlobalV.addTask(state.toTask())
+            }
+            onBack() // 保存后返回
         })
     }) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
@@ -431,5 +445,5 @@ private class CircularRippleNodeFactory(
 @Preview(showBackground = true)
 @Composable
 fun AddTaskPreview() {
-    TapLogTheme { AddTaskApp(onBack = {}) }
+    TapLogTheme { AddTaskApp(onBack = {}, "") }
 }

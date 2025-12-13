@@ -1,3 +1,8 @@
+@file:Suppress("DEPRECATION")
+
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -10,17 +15,18 @@ android {
     compileSdk = 36 // 保持你的新版本
     defaultConfig {
         applicationId = "com.roroi.taplog"
-        minSdk = 23 // **重要**: 使用 Unity 项目的 minSdkVersion (22)，因为它比你原来的 (21) 更高
+        minSdk = 23
         targetSdk = 36 // 保持你的新版本
         versionCode = 7
-        versionName = "1.12"
+        versionName = "1.60"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -38,12 +44,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = "11"
-    }
-
     buildFeatures {
         compose = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        // 使用类型安全的 JvmTarget.fromTarget() 方法
+        jvmTarget.set(JvmTarget.fromTarget("11"))
     }
 }
 
@@ -72,6 +81,10 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.kotlinx.serialization.json)
-    // Image Cropper
     implementation(libs.android.image.cropper)
+    //noinspection NewerVersionAvailable,UseTomlInstead
+    implementation("dev.chrisbanes.haze:haze:0.7.3")
+    //noinspection NewerVersionAvailable,UseTomlInstead
+    implementation("dev.chrisbanes.haze:haze-materials:0.7.3")
+    implementation(libs.androidx.material.icons.extended)
 }

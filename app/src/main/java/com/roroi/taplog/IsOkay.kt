@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.roroi.taplog
 
 import android.content.Context

@@ -142,30 +142,68 @@ fun GoodsCard(
 fun MarketScreen(
     onBuyClick: (Goods) -> Unit,
     onGoodsDelete: (Goods) -> Unit,
-    topBar: @Composable () -> Unit
+    topBar: @Composable () -> Unit,
+    onEditGoods: (Goods) -> Unit
 ) {
-    var goodsToDelete by remember { mutableStateOf<Goods?>(null) }
     val context = LocalContext.current
 
-    // 商品删除弹窗
-    if (goodsToDelete != null) {
+    // 状态1：当前选中的商品
+    var selectedGoods by remember { mutableStateOf<Goods?>(null) }
+    // 状态2：是否显示删除确认
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    // --- 弹窗逻辑 ---
+
+    // 1. 操作选择菜单 (编辑/删除)
+    if (selectedGoods != null && !showDeleteConfirm) {
         AlertDialog(
-            onDismissRequest = { goodsToDelete = null },
-            title = { Text("下架商品") },
-            text = { Text("确定要删除 \"${goodsToDelete?.title}\" 吗？") },
+            onDismissRequest = { selectedGoods = null },
+            title = { Text("管理商品") },
+            text = { Text("对 \"${selectedGoods?.title}\" 进行操作：") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        goodsToDelete?.let { onGoodsDelete(it) }
-                        goodsToDelete = null
-                    }
-                ) { Text("删除", color = Color.Red) }
+                TextButton(onClick = {
+                    val goodsToEdit = selectedGoods
+                    selectedGoods = null // 关闭弹窗
+                    goodsToEdit?.let { onEditGoods(it) } // 跳转编辑
+                }) { Text("编辑 ✏️") }
             },
             dismissButton = {
-                TextButton(onClick = { goodsToDelete = null }) { Text("取消") }
+                TextButton(onClick = {
+                    // 进入二次确认
+                    showDeleteConfirm = true
+                }) {
+                    Text("删除 🗑️", color = Color.Red)
+                }
             }
         )
     }
+
+    // 2. 删除二次确认
+    if (selectedGoods != null && showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteConfirm = false
+                selectedGoods = null
+            },
+            title = { Text("确认下架") },
+            text = { Text("真的要删除这个商品吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    selectedGoods?.let { onGoodsDelete(it) } // 执行删除
+                    showDeleteConfirm = false
+                    selectedGoods = null
+                }) { Text("确认删除", color = Color.Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showDeleteConfirm = false
+                    selectedGoods = null
+                }) { Text("取消") }
+            }
+        )
+    }
+
+    // --- UI 布局 ---
     Scaffold(topBar = topBar) { paddingValues ->
         LazyColumn(
             contentPadding = PaddingValues(
@@ -185,12 +223,12 @@ fun MarketScreen(
                     onBuyClick = onBuyClick,
                     onLongClick = {
                         performRichHaptics(context, HapticType.FAILURE)
-                        goodsToDelete = goods
+                        // [关键修复] 赋值给 selectedGoods，触发操作弹窗
+                        selectedGoods = goods
                     }
                 )
             }
 
-            // 如果列表为空，显示提示
             if (GlobalV.goodsList.isEmpty()) {
                 item {
                     Box(
