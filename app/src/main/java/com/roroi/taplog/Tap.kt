@@ -102,6 +102,10 @@ fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
     var score by remember { mutableIntStateOf(0) }
     // 是否加载完成的标志
     var isReady by remember { mutableIntStateOf(0) }
+
+    // 【新加入的状态】：游戏是否已经开始（点击了数字1）
+    var gameStarted by remember { mutableStateOf(false) }
+
     // 计算用时
     var timeForOne by remember { mutableFloatStateOf(0f) }
     var canAddTime by remember { mutableStateOf(false) }
@@ -116,10 +120,7 @@ fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
     // 初始化或重置函数
     @RequiresApi(Build.VERSION_CODES.O)
     fun resetGame() {
-        // 生成 1~16 洗牌列表
         val numbers = (1..16).shuffled()
-
-        // 填入 grid
         grid.clear()
         repeat(4) { row ->
             grid.add(
@@ -129,89 +130,67 @@ fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
             )
         }
 
-        // 填入 okGrid
         okGrid.clear()
         repeat(4) {
             okGrid.add(mutableStateListOf(false, false, false, false))
         }
 
-        // 重置计数
+        // 重置游戏核心状态
         completeness = 0
         isReady = 1
-        // —— 关键：一并重置计时相关状态 —— //
+        gameStarted = false // 重置开始标志
+
+        // 重置计时相关
         elapsedMs = 0L
         timeForOne = 0f
-        // 把 lastUpdateMs 设为当前，防止下一次循环把一个大间隔算进去
+        canAddTime = false // 开局不计时，等点1
         lastUpdateMs = SystemClock.elapsedRealtime()
-        canAddTime = true
     }
 
     fun saveGame() {
         if (!isPre && isReady == 1) saveTodayData(score, minTime, context)
     }
 
-    // 完成一场游戏
     fun finishGame() {
         if (isReady == 1) {
             score += 1
-            // 计算最短用时
             if (timeForOne < minTime || minTime == 0f) {
                 minTime = timeForOne
             }
-            // 保存部分数据
             saveGame()
         }
     }
 
-    // 首次启动自动初始化
     LaunchedEffect(Unit) {
-        // 加载今日数据
         val data = loadDayData(context, now().toString())
         if (data != null) {
             score = data.first
             minTime = data.second
-            Log.d("日志", "今天的记录：score=$score, minTime=$minTime")
-        } else {
-            Log.d("日志", "今天没有记录")
         }
         if (!isPre) {
             delay(300)
         }
         resetGame()
     }
-    // 精准计数哈
 
     LaunchedEffect(canAddTime) {
-        // 以大循环来持续更新 UI；只有 canAddTime=true 时才会把时间加到 elapsedMs
         while (true) {
-            delay(50L) // 50ms 刷新一次足够平滑且省电
+            delay(50L)
             val now = SystemClock.elapsedRealtime()
             if (canAddTime) {
-                // 把从 lastUpdateMs 到 now 的时间累加到 elapsedMs（ms）
-                // 注意：lastUpdateMs 在暂停时会被重置为 now，避免误加
                 elapsedMs += (now - lastUpdateMs)
                 lastUpdateMs = now
-                // 更新展示时间（秒）
                 timeForOne = elapsedMs / 1000f
                 if(timeForOne >= 999.99f) resetGame()
             } else {
-                // 暂停时只更新 lastUpdateMs，避免下次恢复时把暂停期间也算进来
                 lastUpdateMs = now
             }
         }
     }
 
     if (isReady == 0) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "加载中...",
-                fontSize = 40.sp,
-                textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.primaryContainer
-            )
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(text = "加载中...", fontSize = 40.sp, color = MaterialTheme.colorScheme.primaryContainer)
         }
         return
     }
@@ -224,28 +203,40 @@ fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
                 .border(4.dp, invertColor(MaterialTheme.colorScheme.primary)),
             contentAlignment = Alignment.Center
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 36.dp)
-            ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 36.dp)) {
                 for (rowIndex in 0 until 4) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         for (colIndex in 0 until 4) {
                             val isDone = okGrid[rowIndex][colIndex]
                             val number = grid[rowIndex][colIndex]
+
+                            // 逻辑判断：如果是数字1，或者是已经开始游戏了，或者是已经点过的，才显示数字内容
+                            // 否则显示为黑色背景，且不透出文字
+                            val shouldShowNumber = (number == 1 || gameStarted || isDone)
+
                             Box(
                                 modifier = Modifier
                                     .size(64.dp)
                                     .border(1.dp, Color.Black)
-                                    .background(if (isDone) Color.Green else MaterialTheme.colorScheme.background)
+                                    .background(
+                                        when {
+                                            isDone -> Color.Green
+                                            !shouldShowNumber -> Color.Black // 未点击1之前，非1格子全黑
+                                            else -> MaterialTheme.colorScheme.background
+                                        }
+                                    )
                                     .clickable(enabled = !isDone) {
                                         if (number == completeness + 1) {
+                                            // 如果点的是1，触发开始逻辑
+                                            if (number == 1 && !gameStarted) {
+                                                gameStarted = true
+                                                canAddTime = true
+                                                lastUpdateMs = SystemClock.elapsedRealtime()
+                                            }
+
                                             okGrid[rowIndex][colIndex] = true
                                             completeness++
+
                                             if (completeness == 16) {
                                                 canAddTime = false
                                                 coroutineScope.launch {
@@ -258,8 +249,13 @@ fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (!isDone) {
-                                    Text(text = number.toString())
+                                // 只有在应该显示且未完成时显示数字内容
+                                if (shouldShowNumber && !isDone) {
+                                    Text(
+                                        text = number.toString(),
+                                        color = if (number == 1 && !gameStarted) Color.Red else Color.Unspecified, // 把1标红突出，也可以去掉
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
                                 }
                             }
                         }
@@ -268,6 +264,8 @@ fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
                 }
             }
         }
+
+        // 下半部分 UI 保持不变
         Column(
             modifier = Modifier
                 .weight(1F)
@@ -276,85 +274,51 @@ fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text(
-                "今日得分：$score",
-                textAlign = TextAlign.Center,
-                fontSize = 32.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Text("今日得分：$score", fontSize = 32.sp, color = MaterialTheme.colorScheme.primary)
             StableCenteredNumber(timeForOne.toDouble())
             val minTimeText = String.format(Locale.CHINA, "%.2f", minTime)
-            Text(
-                text = "今日最少用时：$minTimeText s",
-                fontSize = 18.sp,
-                color = godColor
-            )
+            Text(text = "今日最少用时：$minTimeText s", fontSize = 18.sp, color = godColor)
             Row {
-                Button(onClick = { resetGame() }) {
-                    Text(text = "重置")
-                }
+                Button(onClick = { resetGame() }) { Text(text = "重置") }
                 Spacer(modifier = Modifier.width(6.dp))
                 Button(onClick = {
                     list = getAllJsonList(context)
                     showOverlay = true
-                }) {
-                    Text(text = "历史记录")
-                }
+                }) { Text(text = "历史记录") }
             }
         }
     }
-    HistoryOverlay(
-        showOverlay = showOverlay,
-        onDismiss = { showOverlay = false },
-        list = list
-    )
+    HistoryOverlay(showOverlay = showOverlay, onDismiss = { showOverlay = false }, list = list)
 }
+
+// ---------------------------------------------------------
+// 后面的辅助函数（StableCenteredNumber, HistoryOverlay 等）保持原样即可
+// ---------------------------------------------------------
 
 @Composable
 fun StableCenteredNumber(timeForOne: Double) {
     val textMeasurer = rememberTextMeasurer()
-    val textStyle =
-        TextStyle(fontSize = 22.sp, fontFamily = FontFamily.Monospace)
-
+    val textStyle = TextStyle(fontSize = 22.sp, fontFamily = FontFamily.Monospace)
     val measureResult = textMeasurer.measure(text = "999.99", style = textStyle)
-    val measuredPx = measureResult.size.width
-    val maxWidthDp = with(LocalDensity.current) { measuredPx.toDp() }
-
+    val maxWidthDp = with(LocalDensity.current) { measureResult.size.width.toDp() }
     val targetNumber = String.format(Locale.CHINA, "%.2f", timeForOne)
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("本次用时：", fontSize = 22.sp, color = Color.Gray)
-        Box(
-            modifier = Modifier.width(maxWidthDp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = targetNumber,
-                style = textStyle,
-                color = Color.Gray,
-                textAlign = TextAlign.Center
-            )
+        Box(modifier = Modifier.width(maxWidthDp), contentAlignment = Alignment.Center) {
+            Text(text = targetNumber, style = textStyle, color = Color.Gray, textAlign = TextAlign.Center)
         }
         Text(" s", fontSize = 22.sp, color = Color.Gray)
     }
 }
 
-
-// 浮空显示历史记录
 @Composable
 fun HistoryOverlay(showOverlay: Boolean, onDismiss: () -> Unit, list: JSONArray) {
     val context = LocalContext.current
     val data = getBestScoreAndMinTime(context)
-
-    val rList = List(list.length()) { index ->
-        list.getJSONObject(index) // 或者 getString(index)，看你的数据结构
-    }
+    val rList = List(list.length()) { index -> list.getJSONObject(index) }
     val scale by animateFloatAsState(targetValue = if (showOverlay) 1f else 0.6f)
-    val backgroundColor by animateColorAsState(
-        targetValue = if (showOverlay) Color.Black.copy(alpha = 0.5f) else Color.Black.copy(
-            alpha = 0.5f
-        )
-    )
+
     AnimatedVisibility(
         visible = showOverlay,
         enter = fadeIn(animationSpec = tween(200)),
@@ -363,7 +327,7 @@ fun HistoryOverlay(showOverlay: Boolean, onDismiss: () -> Unit, list: JSONArray)
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(backgroundColor)
+                .background(Color.Black.copy(alpha = 0.5f))
                 .scale(scale)
                 .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) { onDismiss() },
             contentAlignment = Alignment.Center
@@ -377,93 +341,45 @@ fun HistoryOverlay(showOverlay: Boolean, onDismiss: () -> Unit, list: JSONArray)
             ) {
                 Text(
                     text = "在此查询之前的分数\n（注：现在游戏还在运行）",
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxSize()
-                        .padding(4.dp)
-                        .border(2.dp, MaterialTheme.colorScheme.onPrimaryContainer),
+                    modifier = Modifier.weight(1f).fillMaxSize().padding(4.dp).border(2.dp, MaterialTheme.colorScheme.onPrimaryContainer),
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(5f)
-                        .padding(4.dp)
-                ) {
+                LazyColumn(modifier = Modifier.weight(5f).padding(4.dp)) {
                     item {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.fillMaxSize()
-                        ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                             Text(text = "历史最佳得分：${data.first}", color = godColor)
                         }
                     }
                     item {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            Text(
-                                text = "历史最少用时：${
-                                    String.format(
-                                        Locale.CHINA,
-                                        "%.2f",
-                                        data.second
-                                    )
-                                } s", color = Color.Gray
-                            )
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                            Text(text = "历史最少用时：${String.format(Locale.CHINA, "%.2f", data.second)} s", color = Color.Gray)
                         }
                     }
                     item {
                         LazyColumn(
-                            modifier = Modifier
-                                .height(220.dp)
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                                .background(Color.Gray.copy(alpha = 0.5f))
+                            modifier = Modifier.height(220.dp).fillMaxWidth().padding(16.dp).background(Color.Gray.copy(alpha = 0.5f))
                         ) {
                             items(rList) { obj ->
                                 Text(
                                     text = "日期：${obj.getString("date")}，最高得分：${obj.getInt("score")}，最少用时：${
-                                        String.format(
-                                            Locale.CHINA,
-                                            "%.2f",
-                                            obj.getDouble("minTime").toFloat()
-                                        )
+                                        String.format(Locale.CHINA, "%.2f", obj.getDouble("minTime").toFloat())
                                     } s", fontSize = 10.sp
                                 )
                             }
                         }
                     }
                     item {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxSize()
-                        ) {
-                            Text(
-                                "-点击浮窗外可关闭浮窗-",
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxSize(),
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
+                        Text("-点击浮窗外可关闭浮窗-", textAlign = TextAlign.Center, modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.onPrimaryContainer)
                     }
                 }
             }
-
         }
     }
-
 }
 
 fun invertColor(color: Color): Color {
-    return Color(
-        red = 1f - color.red,
-        green = 1f - color.green,
-        blue = 1f - color.blue,
-        alpha = color.alpha
-    )
+    return Color(red = 1f - color.red, green = 1f - color.green, blue = 1f - color.blue, alpha = color.alpha)
 }
 
 @RequiresApi(Build.VERSION_CODES.O)
@@ -471,10 +387,7 @@ fun saveTodayData(score: Int, minTime: Float, context: Context) {
     val file = File(context.getExternalFilesDir(null), "Tap/data.json")
     file.parentFile?.mkdirs()
     val today = now().toString()
-
     val list = getAllJsonList(context)
-
-    // 检查是否已有今天的数据
     var foundToday = false
     for (i in 0 until list.length()) {
         val obj = list.getJSONObject(i)
@@ -485,70 +398,49 @@ fun saveTodayData(score: Int, minTime: Float, context: Context) {
             break
         }
     }
-
-    // 如果没有找到今天的记录，新增
     if (!foundToday) {
-        val newObj = JSONObject()
-        newObj.put("score", score)
-        newObj.put("minTime", minTime)
-        newObj.put("date", today)
+        val newObj = JSONObject().apply {
+            put("score", score)
+            put("minTime", minTime)
+            put("date", today)
+        }
         list.put(newObj)
     }
-
-    // 写回文件（覆盖）
     file.writeText(list.toString())
 }
 
 fun getAllJsonList(context: Context): JSONArray {
     val file = File(context.getExternalFilesDir(null), "Tap/data.json")
     if (!file.exists()) return JSONArray()
-
-    val jsonString = file.readText()
-    return JSONArray(jsonString)
+    return JSONArray(file.readText())
 }
 
 @RequiresApi(Build.VERSION_CODES.O)
-fun loadDayData(context: Context, day: String): Pair<Int, Float>? { // first -> score, second -> minTime
-    val file = File(context.getExternalFilesDir(null), "Tap/data.json")
-    if (!file.exists()) return null
-
+fun loadDayData(context: Context, day: String): Pair<Int, Float>? {
     val list = getAllJsonList(context)
-
     for (i in 0 until list.length()) {
         val obj = list.getJSONObject(i)
         if (obj.getString("date") == day) {
-            val score = obj.getInt("score")
-            val minTime = obj.getDouble("minTime").toFloat()
-            return Pair(score, minTime)
+            return Pair(obj.getInt("score"), obj.getDouble("minTime").toFloat())
         }
     }
-
-    return null  // 没找到今天的数据
+    return null
 }
 
 fun getBestScoreAndMinTime(context: Context): Pair<Int, Float> {
-    val file = File(context.getExternalFilesDir(null), "Tap/data.json")
-    if (!file.exists()) return Pair(0, 0f)
-
-    val jsonString = file.readText()
-    val list = JSONArray(jsonString)
-
-    var maxScore = Int.MIN_VALUE
+    val list = getAllJsonList(context)
+    var maxScore = 0
     var minTime = Float.MAX_VALUE
-
+    if (list.length() == 0) return Pair(0, 0f)
     for (i in 0 until list.length()) {
         val obj = list.getJSONObject(i)
         val score = obj.getInt("score")
         val time = obj.getDouble("minTime").toFloat()
-
         if (score > maxScore) maxScore = score
-        if (time < minTime) minTime = time
+        if (time < minTime && time > 0f) minTime = time
     }
-
-    // 如果文件为空，返回 null
-    return if (list.length() == 0) Pair(0, 0f) else Pair(maxScore, minTime)
+    return Pair(maxScore, if(minTime == Float.MAX_VALUE) 0f else minTime)
 }
-
 
 @RequiresApi(Build.VERSION_CODES.O)
 @Preview(showBackground = true)

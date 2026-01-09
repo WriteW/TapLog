@@ -305,8 +305,18 @@ fun TimelineRow(
     onEdit: (String) -> Unit,
     onImageClick: (DailyEntry) -> Unit
 ) {
-    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-    val timeStr = timeFormat.format(Date(group.timestamp))
+    // --- 1. 准备时间格式 ---
+    val dateObj = Date(group.timestamp)
+    val timeStr = remember(group.timestamp) {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(dateObj)
+    }
+    val dateStr = remember(group.timestamp) {
+        // 你可以改成 "MM月dd日" 或者 "MM/dd"
+        SimpleDateFormat("MM/dd", Locale.getDefault()).format(dateObj)
+    }
+    val yearStr = remember(group.timestamp) {
+        SimpleDateFormat("yyyy", Locale.getDefault()).format(dateObj)
+    }
 
     // 动态计算的颜色
     val dynamicDotColor = viewModel.getTimelineColor(group.timestamp)
@@ -315,25 +325,51 @@ fun TimelineRow(
     Row(modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier.width(TOTAL_SIDEBAR_WIDTH), // 使用总宽度
-            contentAlignment = Alignment.TopStart //以此为基准
+            contentAlignment = Alignment.TopStart // 以此为基准
         ) {
-            // 1. 时间文本
-            // 我们限制它的宽度为 TEXT_AREA_WIDTH，这样它就在线条左侧
-            Text(
-                text = timeStr,
-                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                color = textColor,
-                textAlign = TextAlign.End, // 文字靠右对齐(贴近线条)
+            // --- 2. 修改部分：使用 Column 垂直排列时间、日期、年份 ---
+            Column(
+                horizontalAlignment = Alignment.End, // 让文字靠右对齐（紧贴时间轴线条）
                 modifier = Modifier
-                    .width(TEXT_AREA_WIDTH) // 关键：限制宽度
-                    .padding(top = CARD_TOP_OFFSET - 3.dp)
-                    // end: 文字和线的距离; start: 文字和屏幕左边的距离
-                    .padding(end = 16.dp, start = 16.dp)
-            )
+                    .width(TEXT_AREA_WIDTH) // 限制宽度
+                    // top padding 保持原样或微调，确保第一行(时间)与圆点对齐
+                    // 这里稍微减了一点(-5dp)是因为 labelLarge 字体本身有行高，为了视觉中心对齐
+                    .padding(top = CARD_TOP_OFFSET - 5.dp)
+                    .padding(end = 16.dp, start = 4.dp) // start稍微给小点，防止文字太长换行
+            ) {
+                // 第一行：时间 (位置基本不变，最显眼)
+                Text(
+                    text = timeStr,
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp // 稍微加大一点
+                    ),
+                    color = textColor,
+                    textAlign = TextAlign.End
+                )
 
-            // 2. 时间轴圆点
-            // 圆点需要精确地压在线条上 (x = TEXT_AREA_WIDTH)
-            // 但 Canvas 默认从左上角画，所以要减去半径来居中
+                // 第二行：日期 (稍小，透明度降低)
+                Text(
+                    text = dateStr,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = textColor.copy(alpha = 0.7f),
+                    textAlign = TextAlign.End
+                )
+
+                // 第三行：年份 (最小，最淡)
+                Text(
+                    text = yearStr,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.sp
+                    ),
+                    color = textColor.copy(alpha = 0.5f),
+                    textAlign = TextAlign.End
+                )
+            }
+
+            // 3. 时间轴圆点 (位置保持不变)
             Canvas(
                 modifier = Modifier
                     .size(DOT_SIZE)

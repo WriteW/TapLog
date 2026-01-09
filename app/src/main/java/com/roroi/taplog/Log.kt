@@ -2,7 +2,6 @@ package com.roroi.taplog
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.ContextWrapper
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -741,11 +740,11 @@ fun LogCard(
             modifier = Modifier.fillMaxHeight()
         ) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 item {
-                    Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp)){
+                    Spacer(modifier = Modifier.height(16.dp))
                         Text(text = sheetToShow.time, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                         HorizontalDivider(
                             thickness = 4.dp,
@@ -753,7 +752,7 @@ fun LogCard(
                         )
                         Text(text = sheetToShow.head, fontSize = 34.sp)
                         Text(text = sheetToShow.content + "\n", fontSize = 20.sp)
-                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
