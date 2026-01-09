@@ -74,10 +74,9 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.kotlinx.serialization.json)
-    // Image Cropper
+
     implementation(libs.android.image.cropper)
     implementation("dev.chrisbanes.haze:haze:0.7.3")
     implementation("dev.chrisbanes.haze:haze-materials:0.7.3")
     implementation(libs.androidx.material.icons.extended)
-
 }

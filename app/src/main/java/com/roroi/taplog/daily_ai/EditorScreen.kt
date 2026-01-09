@@ -1,16 +1,37 @@
 package com.roroi.taplog.daily_ai
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -96,8 +117,6 @@ fun EditorScreen(
 
     Scaffold(
         containerColor = WarmYellowBg,
-        // 使用 contentWindowInsets 配合 imePadding 解决键盘遮挡
-        contentWindowInsets = WindowInsets.ime,
         topBar = {
             CenterAlignedTopAppBar( // 改用 CenterAligned 以便让 Title 居中
                 title = {
@@ -134,22 +153,23 @@ fun EditorScreen(
                         Icon(Icons.Default.Check, contentDescription = "Save")
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = WarmYellowBg)
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = WarmYellowBg, scrolledContainerColor = WarmYellowBg )
             )
         }
     ) { padding ->
         // 暖黄色背景编辑区域
-        Box(
+        Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .imePadding() // 核心：确保 Box 的 padding 包含输入法高度
+                .padding(bottom = padding.calculateBottomPadding())
+                .consumeWindowInsets(padding)
+                .windowInsetsPadding(WindowInsets.ime) // 核心：确保 Box 的 padding 包含输入法高度
         ) {
             TextField(
                 value = textContent,
                 onValueChange = { textContent = it },
                 modifier = Modifier
-                    .fillMaxSize()
+                    .weight(1f)
                     .padding(horizontal = 24.dp, vertical = 16.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
