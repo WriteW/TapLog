@@ -64,7 +64,7 @@ import kotlin.math.roundToInt
 
 // --- 布局常量配置 ---
 // 左侧：时间文字区域的宽度 (控制时间离左屏幕的距离 + 文字活动空间)
-private val TEXT_AREA_WIDTH = 65.dp
+private val TEXT_AREA_WIDTH = 70.dp
 
 // 右侧：时间轴线条到日记卡片的距离 (控制卡片离线的距离)
 private val GAP_WIDTH = 24.dp
@@ -151,9 +151,20 @@ fun HomeScreen(
                 // 【UI应用】：传入主题颜色给侧边栏
                 theme = currentTheme,
                 hazeState = hazeState,
-                onExport = { /* ... */ },
-                onImport = { /* ... */ },
-                onClear = { /* ... */ }
+                onExport = {
+                    // 生成默认文件名：daily_backup_时间戳.zip
+                    val fileName = "daily_backup_${System.currentTimeMillis()}.zip"
+                    exportLauncher.launch(fileName)
+                    scope.launch { drawerState.close() }
+                },
+                onImport = {
+                    importLauncher.launch(arrayOf("application/zip"))
+                    scope.launch { drawerState.close() }
+                },
+                onClear = {
+                    viewModel.clearAllData()
+                    scope.launch { drawerState.close() }
+                }
             )
         }
     ) {
