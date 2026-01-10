@@ -1,10 +1,12 @@
 package com.roroi.taplog.daily_ai
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -25,7 +27,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -158,19 +159,20 @@ fun EditorScreen(
         }
     ) { padding ->
         // 暖黄色背景编辑区域
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = padding.calculateBottomPadding())
                 .consumeWindowInsets(padding)
                 .windowInsetsPadding(WindowInsets.ime) // 核心：确保 Box 的 padding 包含输入法高度
         ) {
+            Spacer(modifier = Modifier.height(padding.calculateTopPadding() / 1.5f + 4.dp) )
             TextField(
                 value = textContent,
                 onValueChange = { textContent = it },
                 modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                    .fillMaxSize()
+                    .padding(start = 24.dp, end = 24.dp),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,

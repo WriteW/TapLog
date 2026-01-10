@@ -1,20 +1,16 @@
 package com.roroi.taplog.daily_ai
 
-import android.Manifest
-import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -70,19 +66,20 @@ class DailyActivity : ComponentActivity() {
                         )
                     }
 
-                    composable("editor?id={id}") { backStackEntry ->
-                        val id = backStackEntry.arguments?.getString("id")
+                    // 纯文本编辑（新建）
+                    composable("editor") {
+                        Log.d("DailyActivity__", "editor")
                         EditorScreen(
-                            entryId = id,
+                            entryId = null,
                             viewModel = viewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
 
-                    // 纯文本编辑（新建）
-                    composable("editor") {
+                    composable("editor?id={id}") { backStackEntry ->
+                        val id = backStackEntry.arguments?.getString("id")
                         EditorScreen(
-                            entryId = null,
+                            entryId = id,
                             viewModel = viewModel,
                             onBack = { navController.popBackStack() }
                         )
