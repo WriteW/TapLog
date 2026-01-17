@@ -1,4 +1,4 @@
-package com.roroi.taplog.daily_ai
+package com.roroi.taplog.daily
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column

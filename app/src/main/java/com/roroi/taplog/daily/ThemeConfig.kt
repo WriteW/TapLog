@@ -1,4 +1,4 @@
-package com.roroi.taplog.daily_ai
+package com.roroi.taplog.daily
 
 import androidx.compose.ui.graphics.Color
 import java.util.Calendar

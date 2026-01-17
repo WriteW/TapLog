@@ -1,6 +1,5 @@
-package com.roroi.taplog.daily_ai
+package com.roroi.taplog.daily
 
-import android.annotation.SuppressLint
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background

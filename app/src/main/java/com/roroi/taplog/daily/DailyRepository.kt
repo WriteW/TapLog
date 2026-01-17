@@ -1,10 +1,9 @@
-package com.roroi.taplog.daily_ai
+package com.roroi.taplog.daily
 
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.*
 import java.util.zip.ZipEntry
@@ -13,7 +12,7 @@ import java.util.zip.ZipOutputStream
 
 class DailyRepository(private val context: Context) {
 
-    private val baseDir = File(context.getExternalFilesDir(null), "daily_ai")
+    private val baseDir = File(context.getExternalFilesDir(null), "daily")
     private val imageDir = File(baseDir, "image")
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
@@ -121,10 +120,10 @@ class DailyRepository(private val context: Context) {
                     val filePath = File(baseDir, entry!!.name)
                     // 防止 Zip Slip 漏洞 (检查路径是否还在 baseDir 内)
                     if (!filePath.canonicalPath.startsWith(baseDir.canonicalPath)) {
-                        throw SecurityException("Invalid zip entry: ${entry!!.name}")
+                        throw SecurityException("Invalid zip entry: ${entry.name}")
                     }
 
-                    if (entry!!.isDirectory) {
+                    if (entry.isDirectory) {
                         filePath.mkdirs()
                     } else {
                         filePath.parentFile?.mkdirs()

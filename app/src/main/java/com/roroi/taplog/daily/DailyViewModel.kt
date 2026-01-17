@@ -1,8 +1,9 @@
-package com.roroi.taplog.daily_ai
+package com.roroi.taplog.daily
 
 import android.app.Application
 import android.net.Uri
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,7 +12,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Calendar
 import kotlin.math.abs
-import kotlin.math.sin
+import kotlin.math.max
 
 class DailyViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = DailyRepository(application)
@@ -31,10 +32,6 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             val entries = repository.getAllEntries()
             _groupedEntries.value = groupEntries(entries)
         }
-    }
-
-    fun showMessage(msg: String) {
-        _uiMessage.value = msg
     }
 
     fun clearMessage() {
@@ -210,4 +207,42 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             _uiMessage.value = "All data cleared"
         }
     }
+}
+
+data class TransformData(
+    val scale: Float,
+    val offsetX: Float,
+    val offsetY: Float
+)
+
+fun calculateTransform(
+    imageSize: IntSize,
+    containerSize: IntSize,
+    cropParams: CropParams,
+    scaleAdjustment: Float
+): TransformData {
+    if (imageSize.width == 0 || containerSize.width == 0) return TransformData(1f, 0f, 0f)
+
+    val imageRatio = imageSize.width.toFloat() / imageSize.height
+    val containerRatio = containerSize.width.toFloat() / containerSize.height.toFloat()
+
+    val fittedWidth: Float
+    val fittedHeight: Float
+
+    if (imageRatio > containerRatio) {
+        fittedWidth = containerSize.width.toFloat()
+        fittedHeight = fittedWidth / imageRatio
+    } else {
+        fittedHeight = containerSize.height.toFloat()
+        fittedWidth = fittedHeight * imageRatio
+    }
+
+    val baseScale = max(containerSize.width / fittedWidth, containerSize.height / fittedHeight)
+    val totalScale = baseScale * cropParams.userScale
+
+    return TransformData(
+        scale = totalScale,
+        offsetX = cropParams.userOffsetX * scaleAdjustment,
+        offsetY = cropParams.userOffsetY * scaleAdjustment
+    )
 }

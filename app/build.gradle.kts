@@ -76,7 +76,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.android.image.cropper)
+    //noinspection NewerVersionAvailable,UseTomlInstead
     implementation("dev.chrisbanes.haze:haze:0.7.3")
+    //noinspection NewerVersionAvailable,UseTomlInstead
     implementation("dev.chrisbanes.haze:haze-materials:0.7.3")
     implementation(libs.androidx.material.icons.extended)
 }

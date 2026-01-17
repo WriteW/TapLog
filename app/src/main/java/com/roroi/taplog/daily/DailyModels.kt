@@ -1,4 +1,4 @@
-package com.roroi.taplog.daily_ai
+package com.roroi.taplog.daily
 
 import kotlinx.serialization.Serializable
 import java.util.UUID

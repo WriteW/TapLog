@@ -1,4 +1,4 @@
-package com.roroi.taplog.daily_ai
+package com.roroi.taplog.daily
 
 import android.graphics.RenderEffect
 import android.graphics.Shader
@@ -13,7 +13,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
-import kotlinx.coroutines.isActive
 import kotlin.math.max
 import kotlin.math.sqrt
 import kotlin.random.Random
@@ -81,16 +80,7 @@ private fun PhysicsBallsCanvas(theme: DailyTimeTheme) {
         }
     }
 
-    // 动画驱动
-    var timeState by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            withFrameNanos { time -> timeState = time }
-        }
-    }
-
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val now = timeState
         val dt = 0.016f
 
         // 因为外层用了 fillMaxSize(SCALE_DOWN)，这里的 size 已经是极小的微观尺寸了
