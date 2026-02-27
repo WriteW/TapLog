@@ -18,7 +18,7 @@ android {
         minSdk = 23 // **重要**: 使用 Unity 项目的 minSdkVersion (22)，因为它比你原来的 (21) 更高
         targetSdk = 36 // 保持你的新版本
         versionCode = 7
-        versionName = "2.60"
+        versionName = "1.60"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
