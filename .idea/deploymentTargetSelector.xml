@@ -28,6 +28,17 @@
       <SelectionState runConfigName="PreviewAddToCartAnimationScreen">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
+      <SelectionState runConfigName="EditPagePreview">
+        <option name="selectionMode" value="DROPDOWN" />
+        <DropdownSelection timestamp="2026-02-27T06:56:19.323482600Z">
+          <Target type="DEFAULT_BOOT">
+            <handle>
+              <DeviceId pluginId="Default" identifier="serial=emulator-5554;connection=c0d6b1c4" />
+            </handle>
+          </Target>
+        </DropdownSelection>
+        <DialogSelection />
+      </SelectionState>
     </selectionStates>
   </component>
 </project>

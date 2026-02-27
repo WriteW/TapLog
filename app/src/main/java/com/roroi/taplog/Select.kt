@@ -61,7 +61,8 @@ val mainList = listOf(
     CardItem(R.drawable.tap_cover, "Tap", Tap::class.java),
     CardItem(R.drawable.log_cover, "Log", Log::class.java),
     CardItem(R.drawable.isokay_cover, "Is it okay?", IsOkay::class.java),
-    CardItem(R.drawable.daily_cover, "Daily", DailyActivity::class.java)
+    CardItem(R.drawable.daily_cover, "Daily", DailyActivity::class.java),
+    CardItem(R.drawable.stream_cover, "Stream", com.roroi.taplog.stream.MainActivity::class.java)
 )
 
 // 不常用列表 (Score 和 score_ai 移到这里)

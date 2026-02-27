@@ -1,5 +1,8 @@
 @file:Suppress("DEPRECATION")
 
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -40,12 +43,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    kotlinOptions {
-        jvmTarget = "11"
-    }
-
     buildFeatures {
         compose = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        // 使用类型安全的 JvmTarget.fromTarget() 方法
+        jvmTarget.set(JvmTarget.fromTarget("11"))
     }
 }
 
@@ -74,7 +80,6 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
     implementation(libs.kotlinx.serialization.json)
-
     implementation(libs.android.image.cropper)
     //noinspection NewerVersionAvailable,UseTomlInstead
     implementation("dev.chrisbanes.haze:haze:0.7.3")
