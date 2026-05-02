@@ -15,7 +15,7 @@ android {
     compileSdk = 36 // 保持你的新版本
     defaultConfig {
         applicationId = "com.roroi.taplog"
-        minSdk = 23
+        minSdk = 26
         targetSdk = 36 // 保持你的新版本
         versionCode = 7
         versionName = "1.60"
@@ -57,9 +57,6 @@ kotlin {
 }
 
 dependencies {
-    // **【添加】**：这是最重要的依赖，将 unityLibrary 模块包含进来
-
-    // --- 你现有的其他依赖项保持不变 ---
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

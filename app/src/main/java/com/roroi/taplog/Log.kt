@@ -2,14 +2,12 @@ package com.roroi.taplog
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -128,7 +126,6 @@ class Log : ComponentActivity() {
     var scope: CoroutineScope? = null
     var lastSelectType = mutableStateOf("")
 
-    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -199,7 +196,11 @@ class Log : ComponentActivity() {
             withContext(Dispatchers.IO) {
                 saveLog(context, logList)
                 saveType(context, typeList)
-                saveExtraData(context, Pair(timerExpanded.value, timerStartTime.longValue), selectedType.value)
+                saveExtraData(
+                    context,
+                    Pair(timerExpanded.value, timerStartTime.longValue),
+                    selectedType.value
+                )
             }
         }
     }
@@ -216,7 +217,10 @@ fun saveExtraData(context: Context, data: Pair<Boolean, Long>, selectType: Strin
     Log.d("timer数据", f.readText())
 }
 
-fun loadExtraData(context: Context, typeList: SnapshotStateList<String>): Pair<Pair<Boolean, Long>, String> {
+fun loadExtraData(
+    context: Context,
+    typeList: SnapshotStateList<String>
+): Pair<Pair<Boolean, Long>, String> {
     val f = File(context.getExternalFilesDir(null), "Log/timer.json")
     return if (f.exists() && isJson(f.readText())) {
         val data = JSONArray(f.readText())
@@ -231,7 +235,6 @@ fun loadExtraData(context: Context, typeList: SnapshotStateList<String>): Pair<P
 }
 
 @SuppressLint("SimpleDateFormat")
-@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalCoroutinesApi::class)
 @Composable
 fun FabTime(
@@ -304,7 +307,8 @@ fun FabTime(
                 endTimeL = System.currentTimeMillis()
                 val endTime = SimpleDateFormat("HH:MM:ss").format(Date())
                 val lastTime = ((endTimeL - startTimestamp.longValue) / 1000).toInt()
-                val targetLastTime = if (lastTime < 60) "$lastTime s" else if (lastTime < 3600) "${lastTime / 60} min ${lastTime % 60} s" else "${lastTime / 3600} h ${(lastTime % 3600) / 60} min ${lastTime % 60} s"
+                val targetLastTime =
+                    if (lastTime < 60) "$lastTime s" else if (lastTime < 3600) "${lastTime / 60} min ${lastTime % 60} s" else "${lastTime / 3600} h ${(lastTime % 3600) / 60} min ${lastTime % 60} s"
                 logList.add(
                     LogData(
                         now().toString(),
@@ -371,7 +375,6 @@ fun FabTime(
 
 @SuppressLint("CoroutineCreationDuringComposition")
 @OptIn(ExperimentalMaterial3Api::class)
-@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun LogCard(
     innerPaddingValues: PaddingValues,
@@ -740,18 +743,20 @@ fun LogCard(
             modifier = Modifier.fillMaxHeight()
         ) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
-                        Text(text = sheetToShow.time, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                        HorizontalDivider(
-                            thickness = 4.dp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(text = sheetToShow.head, fontSize = 34.sp)
-                        Text(text = sheetToShow.content + "\n", fontSize = 20.sp)
+                    Text(text = sheetToShow.time, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    HorizontalDivider(
+                        thickness = 4.dp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(text = sheetToShow.head, fontSize = 34.sp)
+                    Text(text = sheetToShow.content + "\n", fontSize = 20.sp)
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
@@ -916,7 +921,6 @@ fun loadType(context: Context, typeList: SnapshotStateList<String>) {
 }
 
 // 浮空显示添加今日Log
-@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun FloatAddLog(
     showOverlay: Boolean,
@@ -1222,7 +1226,6 @@ fun FloatAddCategory(
 }
 
 @SuppressLint("UnrememberedMutableState")
-@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 @Preview(
     showBackground = true, showSystemUi = true,
@@ -1311,7 +1314,7 @@ fun getLogFormJSONObject(jsonObj: Any): LogData {
     val obj = jsonObj as JSONObject
 
     val args = constructor.parameters.associateWith { param ->
-        if(obj.has(param.name)) {
+        if (obj.has(param.name)) {
             obj.get(param.name!!)
         } else {
             null

@@ -4,14 +4,12 @@ package com.roroi.taplog
 
 import android.content.Context
 import android.content.ContextWrapper
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -66,7 +64,6 @@ class IsOkay : ComponentActivity() {
     // 使用 SnapshotStateList - Compose 会观察它的改动并触发重组
     private var okayList = mutableStateListOf<StateData>()
 
-    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         okayList.clear()
@@ -84,14 +81,12 @@ class IsOkay : ComponentActivity() {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.O)
     override fun onPause() {
         super.onPause()
         writeState(okayList, this)
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MainScreen(
@@ -215,7 +210,6 @@ fun MainScreen(
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 fun writeState(okayList: MutableList<StateData>, context: Context) {
     val f = File(context.getExternalFilesDir(null), "isOkay/state.txt")
     f.parentFile?.mkdirs()
@@ -227,7 +221,6 @@ fun writeState(okayList: MutableList<StateData>, context: Context) {
     Log.d("isOkay", f.readText())
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 fun loadStateList(context: Context): List<StateData> {
     val f = File(context.getExternalFilesDir(null), "isOkay/state.txt")
     val targetList = mutableListOf<StateData>()
@@ -249,7 +242,6 @@ fun loadStateList(context: Context): List<StateData> {
     return listOf()
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 fun timeUntilNextBoundary(): String {
     val now = LocalDateTime.now()
     val boundaries = listOf(
@@ -277,7 +269,6 @@ fun timeUntilNextBoundary(): String {
     return "%02d:%02d:%02d".format(hours, minutes, seconds)
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 fun getTimePeriod(): String {
     val hour = LocalTime.now().hour
     return when (hour) {
@@ -288,7 +279,6 @@ fun getTimePeriod(): String {
     }
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 @Preview(showBackground = true)
 @Composable
 fun IsOkayPre() {

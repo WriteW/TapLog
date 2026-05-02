@@ -1,13 +1,11 @@
 package com.roroi.taplog
 
 import android.content.Context
-import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -69,7 +67,6 @@ import java.time.LocalDate.now
 import java.util.Locale
 
 class Tap : ComponentActivity() {
-    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -85,7 +82,6 @@ class Tap : ComponentActivity() {
 
 val godColor = Color(0xFFFF9800)
 
-@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
     val context = LocalContext.current
@@ -116,7 +112,6 @@ fun TapP(innerPadding: PaddingValues, isPre: Boolean) {
     var list by remember { mutableStateOf(JSONArray()) }
 
     // 初始化或重置函数
-    @RequiresApi(Build.VERSION_CODES.O)
     fun resetGame() {
         val numbers = (1..16).shuffled()
         grid.clear()
@@ -380,7 +375,6 @@ fun invertColor(color: Color): Color {
     return Color(red = 1f - color.red, green = 1f - color.green, blue = 1f - color.blue, alpha = color.alpha)
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 fun saveTodayData(score: Int, minTime: Float, context: Context) {
     val file = File(context.getExternalFilesDir(null), "Tap/data.json")
     file.parentFile?.mkdirs()
@@ -413,7 +407,6 @@ fun getAllJsonList(context: Context): JSONArray {
     return JSONArray(file.readText())
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 fun loadDayData(context: Context, day: String): Pair<Int, Float>? {
     val list = getAllJsonList(context)
     for (i in 0 until list.length()) {
@@ -440,7 +433,6 @@ fun getBestScoreAndMinTime(context: Context): Pair<Int, Float> {
     return Pair(maxScore, if(minTime == Float.MAX_VALUE) 0f else minTime)
 }
 
-@RequiresApi(Build.VERSION_CODES.O)
 @Preview(showBackground = true)
 @Composable
 fun TapPr() {

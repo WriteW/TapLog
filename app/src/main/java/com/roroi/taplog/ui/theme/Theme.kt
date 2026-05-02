@@ -1,15 +1,21 @@
 package com.roroi.taplog.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import com.roroi.taplog.daily.dymonFont
 
 private val DarkColorScheme = darkColorScheme(
     primary = Purple80,
@@ -49,10 +55,33 @@ fun TapLogTheme(
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
+    val language = LocalConfiguration.current.locales[0].language
+
+    val fontFamily = if (language == "en" || language == "zh") {
+        dymonFont
+    } else {
+        FontFamily.Default
+    }
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = Typography(
+            bodyLarge = TextStyle(
+                fontWeight = FontWeight.Normal,
+                fontFamily = fontFamily,
+                fontSize = 18.sp,
+            ),
+            titleLarge = TextStyle(
+                fontWeight = FontWeight.Bold,
+                fontSize = 24.sp,
+                fontFamily = fontFamily
+            ),
+            labelSmall = TextStyle(
+                fontWeight = FontWeight.Light,
+                fontSize = 12.sp,
+                fontFamily = fontFamily,
+            )
+        ),
         content = content
     )
 }

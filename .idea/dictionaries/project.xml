@@ -6,8 +6,12 @@
       <w>addr</w>
       <w>coords</w>
       <w>disp</w>
+      <w>dymon</w>
+      <w>hmac</w>
       <w>hmmss</w>
       <w>lerp</w>
+      <w>lerped</w>
+      <w>pbkdf</w>
       <w>snackbar</w>
       <w>truncatable</w>
     </words>

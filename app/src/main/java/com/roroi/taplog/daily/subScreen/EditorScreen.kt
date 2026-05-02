@@ -1,6 +1,8 @@
 package com.roroi.taplog.daily.subScreen
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures // 新增导入
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -13,14 +15,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -29,47 +28,67 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextRange // 新增导入
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue // 新增导入
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.roroi.taplog.daily.TextColor
 import com.roroi.taplog.daily.WarmYellowBg
+import com.roroi.taplog.daily.getTextColor
 import com.roroi.taplog.daily.viewmodel.DailyViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
-    entryId: String?,
     viewModel: DailyViewModel,
     onBack: () -> Unit
 ) {
-    // 查找现有条目
-    val existingEntry = remember(entryId) {
-        viewModel.groupedEntries.value.flatMap { it.items }.find { it.id == entryId }
-    }
+    val state by viewModel.editorState.collectAsState()
 
-    var textContent by remember { mutableStateOf(existingEntry?.content ?: "") }
-
-    // 弹窗状态
     var showUnsavedDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
-    // 检查是否有修改
-    val isDirty = if (existingEntry != null) {
-        textContent != existingEntry.content
-    } else {
-        textContent.isNotEmpty()
+    // ==========================================
+    // 核心修复 1：使用本地的 TextFieldValue 来维护光标位置和输入法组合状态
+    // ==========================================
+    // 【优化】：增加 state.originalText 作为依赖，确保多次进出同一个日记时能正确刷新
+    var textFieldValue by remember(state.sessionId) {
+        mutableStateOf(
+            TextFieldValue(
+                text = state.editingText,
+                selection = TextRange(state.editingText.length)
+            )
+        )
     }
 
-    // 处理返回逻辑
+
+    // ===== 字体缩放 =====
+    val defaultFontSize = 18.sp
+    var fontSize by remember { mutableStateOf(defaultFontSize) }
+
+    val dynamicHorizontalPadding = remember(fontSize) {
+        val minFont = 12f
+        val maxFont = 60f
+        val minPadding = 16f
+        val maxPadding = 24f
+
+        val fraction = (fontSize.value - minFont) / (maxFont - minFont)
+        val currentPadding = maxPadding - (fraction * (maxPadding - minPadding))
+        currentPadding.dp
+    }
+
+    // ===== 返回逻辑 =====
     val handleBack = {
-        if (isDirty) {
+        if (state.isDirty) {
             showUnsavedDialog = true
         } else {
             onBack()
@@ -78,7 +97,7 @@ fun EditorScreen(
 
     BackHandler { handleBack() }
 
-    // 1. 未保存更改的确认弹窗
+    // ===== 弹窗部分保持不变 =====
     if (showUnsavedDialog) {
         AlertDialog(
             onDismissRequest = { showUnsavedDialog = false },
@@ -88,15 +107,18 @@ fun EditorScreen(
                 TextButton(onClick = {
                     showUnsavedDialog = false
                     onBack()
-                }) { Text("放弃") }
+                }) {
+                    Text("放弃")
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showUnsavedDialog = false }) { Text("取消") }
+                TextButton(onClick = { showUnsavedDialog = false }) {
+                    Text("取消")
+                }
             }
         )
     }
 
-    // 2. 删除确认弹窗
     if (showDeleteConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
@@ -104,8 +126,7 @@ fun EditorScreen(
             text = { Text("确定要彻底删除这条日记吗？此操作无法撤销。") },
             confirmButton = {
                 TextButton(onClick = {
-                    if (existingEntry != null) {
-                        viewModel.deleteEntry(existingEntry.id) // 传递 ID
+                    viewModel.deleteEditor {
                         showDeleteConfirmDialog = false
                         onBack()
                     }
@@ -114,43 +135,28 @@ fun EditorScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("取消")
+                }
             }
         )
     }
 
+    val backgroundColor = WarmYellowBg
+
     Scaffold(
-        containerColor = WarmYellowBg,
+        containerColor = backgroundColor,
         topBar = {
-            CenterAlignedTopAppBar( // 改用 CenterAligned 以便让 Title 居中
-                title = {
-                    // 需求：删除键放中间
-                    if (existingEntry != null) {
-                        FilledTonalIconButton(
-                            onClick = { showDeleteConfirmDialog = true },
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = Color.White.copy(alpha = 0.5f),
-                                contentColor = Color.DarkGray.copy(alpha = 0.8f)
-                            )
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete")
-                        }
-                    }
-                },
+            CenterAlignedTopAppBar(
+                title = { /*...*/ },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    // 保存按钮在右侧
                     IconButton(onClick = {
-                        if (textContent.isNotBlank()) {
-                            if (existingEntry != null) {
-                                viewModel.updateEntry(existingEntry.copy(content = textContent))
-                            } else {
-                                viewModel.addTextEntry(textContent)
-                            }
+                        viewModel.saveEditor {
                             onBack()
                         }
                     }) {
@@ -158,44 +164,72 @@ fun EditorScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = WarmYellowBg,
-                    scrolledContainerColor = WarmYellowBg
-                )
+                    containerColor = Color.Transparent
+                ),
+                modifier = Modifier.pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = { fontSize = defaultFontSize }
+                    )
+                }
             )
         }
     ) { padding ->
-        // 暖黄色背景编辑区域
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(bottom = padding.calculateBottomPadding())
                 .consumeWindowInsets(padding)
-                .windowInsetsPadding(WindowInsets.ime) // 核心：确保 Box 的 padding 包含输入法高度
+                .windowInsetsPadding(WindowInsets.ime)
+                // ==========================================
+                // 核心修复 2：废弃 transformable，改用 detectTransformGestures
+                // 这样既能双指缩放文字，又不会屏蔽 TextField 的上下滑动和光标选词能力
+                // ==========================================
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, _, zoom, _ ->
+                        val newSize = fontSize.value * zoom
+                        fontSize = newSize.coerceIn(12f, 60f).sp
+                    }
+                }
         ) {
+
             Spacer(modifier = Modifier.height(padding.calculateTopPadding()))
+
             TextField(
-                value = textContent,
-                onValueChange = { textContent = it },
+                // 使用修改后的本地 textFieldValue
+                value = textFieldValue,
+                onValueChange = { newValue ->
+                    // 立即更新本地UI（解决光标乱跳和输入法漏字问题）
+                    textFieldValue = newValue
+                    // 异步同步到 ViewModel 以备保存
+                    viewModel.onEditorTextChange(newValue.text)
+                },
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 24.dp, end = 24.dp),
+                    .padding(
+                        start = dynamicHorizontalPadding,
+                        end = dynamicHorizontalPadding
+                    ),
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = MaterialTheme.colorScheme.primary
+                    focusedContainerColor = backgroundColor,
+                    unfocusedContainerColor = backgroundColor,
+                    focusedIndicatorColor = backgroundColor,
+                    unfocusedIndicatorColor = backgroundColor
                 ),
                 textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = TextColor,
-                    lineHeight = 28.sp, // 增加行高，提升阅读体验
-                    fontSize = 18.sp
+                    color = getTextColor(
+                        viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.isDark ?: false
+                    ),
+                    lineHeight = (fontSize.value * 1.5).sp,
+                    fontSize = fontSize,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Default
                 ),
                 placeholder = {
                     Text(
                         "江河入海，终归源头...",
                         color = Color.Gray.copy(alpha = 0.5f),
-                        fontSize = 18.sp
+                        fontSize = fontSize
                     )
                 }
             )

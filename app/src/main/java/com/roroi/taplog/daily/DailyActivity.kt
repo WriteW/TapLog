@@ -19,8 +19,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.roroi.taplog.daily.subScreen.EditorScreen
 import com.roroi.taplog.daily.subScreen.PortalEditor
-import com.roroi.taplog.daily.subScreen.PortalTB
 import com.roroi.taplog.daily.viewmodel.DailyViewModel
+import com.roroi.taplog.ui.theme.TapLogTheme
 
 @Suppress("DEPRECATION")
 class DailyActivity : ComponentActivity() {
@@ -28,7 +28,7 @@ class DailyActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            DailyTheme {
+            TapLogTheme {
                 val  navController = rememberNavController()
                 val viewModel: DailyViewModel = viewModel()
 
@@ -77,7 +77,7 @@ class DailyActivity : ComponentActivity() {
                             }
 
                             "portal" -> {
-                                navController.navigate("portal")
+                                navController.navigate(pair.second)
                             }
                         }
                     }
@@ -93,24 +93,36 @@ class DailyActivity : ComponentActivity() {
                     // 纯文本编辑（新建）
                     composable("editor") {
                         Log.d("DailyActivity__", "editor")
+
+                        // 【修改点】：新建日记时，传入 null 让 ViewModel 清空编辑器
+                        LaunchedEffect(Unit) {
+                            viewModel.startEditing(null)
+                        }
+
                         EditorScreen(
-                            entryId = null,
                             viewModel = viewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
 
+                    // 纯文本编辑（修改）
                     composable("editor?id={id}") { backStackEntry ->
                         val id = backStackEntry.arguments?.getString("id")
+
+                        // 【修改点】：修改日记时，把解析出来的 id 传给 ViewModel，加载对应的文本
+                        LaunchedEffect(id) {
+                            viewModel.startEditing(id)
+                        }
+
                         EditorScreen(
-                            entryId = id,
                             viewModel = viewModel,
                             onBack = { navController.popBackStack() }
                         )
                     }
 
-                    composable("portal") {
-                        PortalEditor(viewModel = viewModel)
+                    composable("portal?id={id}") { backStackEntry ->
+                        val fatherId = backStackEntry.arguments?.getString("id")
+                        fatherId?.let { PortalEditor(viewModel = viewModel, it) }
                     }
                 }
             }

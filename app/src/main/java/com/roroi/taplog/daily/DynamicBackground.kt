@@ -7,7 +7,14 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
@@ -19,12 +26,11 @@ import com.roroi.taplog.daily.viewmodel.SCALE_DOWN
 import com.roroi.taplog.daily.viewmodel.SCALE_V
 import com.roroi.taplog.daily.viewmodel.ThemeBall
 import com.roroi.taplog.daily.viewmodel.solveCollisions
-import kotlin.math.max
 import kotlin.math.sqrt
 import kotlin.random.Random
 
 @Composable
-fun DailyDynamicBackground(theme: DailyTimeTheme) {
+fun DailyDynamicBackground(theme: DailyTimeTheme, blurScale: Float = 1f) {
     // 1. 最底层：主题背景色
     Box(
         modifier = Modifier
@@ -43,8 +49,10 @@ fun DailyDynamicBackground(theme: DailyTimeTheme) {
                     transformOrigin = TransformOrigin(0f, 0f) // 从左上角放大
 
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        // 动态计算模糊半径
-                        val optimizedRadius = max(15f, 100f / DOWNSAMPLE_FACTOR)
+                        // 修改后的逻辑
+                        val baseRadius = 80f // 基础模糊半径，值越大越模糊
+                        val optimizedRadius = (baseRadius * blurScale) / DOWNSAMPLE_FACTOR
+
                         renderEffect = RenderEffect
                             .createBlurEffect(optimizedRadius, optimizedRadius, Shader.TileMode.MIRROR)
                             .asComposeRenderEffect()
