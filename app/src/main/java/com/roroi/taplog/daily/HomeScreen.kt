@@ -175,6 +175,7 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
 
     val hazeState = remember { HazeState() }
+    val isDark = viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.isDark ?: false // 当前空间是否为暗色
 
     // 导入：打开文件
     val importLauncher = rememberLauncherForActivityResult(
@@ -569,7 +570,7 @@ fun TimelineRow(
 
     // 动态计算的颜色
     val dynamicDotColor = viewModel.getTimelineColor(group.timestamp)
-    val textColor = theme.onSurfaceColor // 保证文字清晰可读
+    val textColor = theme.primaryColor // 保证文字清晰可读
 
     Row(modifier = Modifier.fillMaxWidth()) {
         Box(
@@ -1132,6 +1133,8 @@ fun CompactDiaryCard(
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,
+                color = getTextColor(false),
+                fontWeight = FontWeight.Bold
             )
         }
 

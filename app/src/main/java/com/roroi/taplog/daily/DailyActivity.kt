@@ -93,12 +93,6 @@ class DailyActivity : ComponentActivity() {
                     // 纯文本编辑（新建）
                     composable("editor") {
                         Log.d("DailyActivity__", "editor")
-
-                        // 【修改点】：新建日记时，传入 null 让 ViewModel 清空编辑器
-                        LaunchedEffect(Unit) {
-                            viewModel.startEditing(null)
-                        }
-
                         EditorScreen(
                             viewModel = viewModel,
                             onBack = { navController.popBackStack() }
@@ -107,13 +101,6 @@ class DailyActivity : ComponentActivity() {
 
                     // 纯文本编辑（修改）
                     composable("editor?id={id}") { backStackEntry ->
-                        val id = backStackEntry.arguments?.getString("id")
-
-                        // 【修改点】：修改日记时，把解析出来的 id 传给 ViewModel，加载对应的文本
-                        LaunchedEffect(id) {
-                            viewModel.startEditing(id)
-                        }
-
                         EditorScreen(
                             viewModel = viewModel,
                             onBack = { navController.popBackStack() }

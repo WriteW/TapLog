@@ -62,9 +62,9 @@ fun generateColorPalette(primaryColor: Color, count: Int = 4): List<Color> {
 data class DailyTimeTheme(
     val backgroundColor: Color,
     val primaryColor: Color,
-    val onSurfaceColor: Color,
-    val ballColors: List<Color>, // 小球颜色池
-    val isDark: Boolean = false
+    val isDark: Boolean = false,
+    val onSurfaceColor: Color = if (isDark) Color.White.copy(alpha = 0.9f) else Color(0xFF455A64),
+    val ballColors: List<Color> // 小球颜色池
 ) {
     companion object {
         // 预定义的静态实例，模拟之前的枚举行为

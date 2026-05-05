@@ -3,6 +3,7 @@ package com.roroi.taplog.daily.viewmodel
 import android.app.Application
 import android.net.Uri
 import android.util.Log
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -108,23 +109,28 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     // 存储空间相关状态
     var spaces by mutableStateOf<List<DSpace>>(emptyList())
         private set
-    var selectedDSpaceId: String? = null
+    var selectedDSpaceId: String? by mutableStateOf(null)
         private set
-    var spaceDestination: String? = null
+    var spaceDestination: String? by mutableStateOf(null)
         private set
 
     var showLoadingDialog: Boolean by mutableStateOf(false)
 
     fun getThemeBySpace(): DailyTimeTheme {
-        spaces.find { it.id == selectedDSpaceId }?.let {
+        val space = spaces.find { it.id == selectedDSpaceId }
+
+        if (space != null) {
+            val isDark = space.isDark
+
             return DailyTimeTheme(
-                Color(it.colorBgArgb),
-                Color(it.colorBallArgb),
-                generateColorPair(Color(it.colorBallArgb)).second,
-                generateColorPalette(Color(it.colorBallArgb)),
-                it.isDark
+                backgroundColor = Color(space.colorBgArgb),
+                primaryColor = Color(space.colorBallArgb),
+                isDark = isDark,            // 明确指定深色模式标志
+                ballColors = generateColorPalette(Color(space.colorBallArgb))
             )
         }
+
+        // 如果没找到空间，返回当前时间段的默认主题
         return DailyTimeTheme.getCurrent()
     }
 
@@ -272,7 +278,9 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         viewingImageEntry = null
     }
 
+    // 修改后：
     fun navigateToEditor(id: String?) {
+        startEditing(id) // <--- 新增：在导航前初始化状态，这样就不会受 Activity 重建影响
         viewModelScope.launch {
             navigationEvent.emit(Pair("editor", if (id == null) "editor" else "editor?id=$id"))
         }

@@ -15,11 +15,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -43,6 +46,7 @@ import androidx.compose.ui.text.input.TextFieldValue // 新增导入
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.roroi.taplog.daily.WarmYellowBg
+import com.roroi.taplog.daily.WarmYellowBgDark
 import com.roroi.taplog.daily.getTextColor
 import com.roroi.taplog.daily.viewmodel.DailyViewModel
 
@@ -141,17 +145,37 @@ fun EditorScreen(
             }
         )
     }
-
-    val backgroundColor = WarmYellowBg
-
+    val isDark = viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.isDark ?: false
+    val backgroundColor = if (isDark) WarmYellowBgDark else WarmYellowBg
+    val iconTint = if (viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.isDark == true) {
+        Color.White.copy(alpha = 0.9f)
+    } else {
+        Color.Black.copy(alpha = 0.8f)
+    }
     Scaffold(
         containerColor = backgroundColor,
         topBar = {
             CenterAlignedTopAppBar(
-                title = { /*...*/ },
+                title = { // 需求：删除键放中间
+                    if (!state.isNew) {
+                        FilledTonalIconButton(
+                            onClick = { showDeleteConfirmDialog = true },
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                // 使用半透明容器色，使其在不同背景下都有呼吸感
+                                containerColor = Color.Gray.copy(alpha = 0.1f),
+                                contentColor = Color.Gray.copy(alpha = 0.7f)
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete"
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Default.ArrowBack, contentDescription = "Back", tint = iconTint)
                     }
                 },
                 actions = {
@@ -160,7 +184,7 @@ fun EditorScreen(
                             onBack()
                         }
                     }) {
-                        Icon(Icons.Default.Check, contentDescription = "Save")
+                        Icon(Icons.Default.Check, contentDescription = "Save", tint = iconTint)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

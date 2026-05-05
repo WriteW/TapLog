@@ -8,6 +8,7 @@ import com.roroi.taplog.R
 
 // 暖黄色调，不要太黄
 val WarmYellowBg = Color(0xFFFFFBE6) // 极浅的暖黄
+val WarmYellowBgDark = Color(0xFF1E1B18)
 private val BlackTextColor = Color(0xFF333333)
 private val WhiteTextColor = Color(0xFFFFFFFF)
 fun getTextColor(isDark: Boolean) = if (isDark) WhiteTextColor else BlackTextColor

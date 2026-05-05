@@ -312,7 +312,8 @@ fun ThemeEditorCircle(
         space?.let {
             boxTheme = boxTheme.copy(
                 backgroundColor = Color(it.colorBgArgb),
-                primaryColor = Color(it.colorBallArgb)
+                primaryColor = Color(it.colorBallArgb),
+                isDark = it.isDark
             )
         }
     }

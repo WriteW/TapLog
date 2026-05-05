@@ -18,7 +18,7 @@ android {
         minSdk = 26
         targetSdk = 36 // 保持你的新版本
         versionCode = 7
-        versionName = "1.60"
+        versionName = "2.01"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

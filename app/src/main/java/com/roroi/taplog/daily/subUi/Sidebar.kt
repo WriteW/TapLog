@@ -108,15 +108,16 @@ fun LeftSidebarContent(
         modifier = hazeModifier
             .width(300.dp)
     ) {
+
         LeftSidebarHeader(theme)
-        LeftSidebarActions(onExport, onImport, viewModel)
+        LeftSidebarActions(viewModel, onExport, onImport)
         HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp, horizontal = 28.dp))
 
         if (viewModel == null || viewModel.getSpaceFromId(viewModel.selectedDSpaceId) != null) {
             LeftSideSpaceEditor(viewModel)
             HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp, horizontal = 28.dp))
         }
-        LeftSidebarDangerZone { clearConfirmCount = 1 }
+        LeftSidebarDangerZone(viewModel = viewModel) { clearConfirmCount = 1 }
     }
 }
 
@@ -125,12 +126,23 @@ fun LeftSideSpaceEditor(viewModel: DailyViewModel?) {
     val currentSpace = viewModel?.getSpaceFromId(viewModel.selectedDSpaceId)
 
     NavigationDrawerItem(
-        label = { Text("Change Password") },
+        label = {
+            Text(
+                "Change Password",
+                color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        },
         selected = false,
         onClick = {
             viewModel?.showChangePassword = true
         },
-        icon = { Icon(Icons.Default.Password, "change password") }
+        icon = {
+            Icon(
+                Icons.Default.Password,
+                "change password",
+                tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        }
     )
     Row(
         modifier = Modifier
@@ -186,35 +198,80 @@ fun LeftSidebarHeader(theme: DailyTimeTheme) {
 }
 
 @Composable
-fun LeftSidebarActions(onExport: () -> Unit, onImport: () -> Unit, viewModel: DailyViewModel?) {
+fun LeftSidebarActions(viewModel: DailyViewModel?, onExport: () -> Unit, onImport: () -> Unit) {
     NavigationDrawerItem(
-        label = { Text("Export Data (ZIP)") },
+        label = {
+            Text(
+                "Export Data (ZIP)",
+                color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        },
         selected = false,
         onClick = onExport,
-        icon = { Icon(Icons.Default.Output, null) })
+        icon = {
+            Icon(
+                Icons.Default.Output,
+                null,
+                tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        },
+    )
     NavigationDrawerItem(
-        label = { Text("Import Data (ZIP)") },
+        label = {
+            Text(
+                "Import Data (ZIP)",
+                color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        },
         selected = false,
         onClick = onImport,
-        icon = { Icon(Icons.AutoMirrored.Filled.Input, null) })
+        icon = {
+            Icon(
+                Icons.AutoMirrored.Filled.Input,
+                null,
+                tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        })
     NavigationDrawerItem(
-        label = { Text("Batch Manage") },
+        label = {
+            Text(
+                "Batch Manage",
+                color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        },
         selected = false,
         onClick = {
             viewModel?.startBatchSelecting()
         },
-        icon = { Icon(Icons.Default.Menu, "batch manage") }
+        icon = {
+            Icon(
+                Icons.Default.Menu,
+                "batch manage",
+                tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        }
     )
 }
 
 @Composable
-fun LeftSidebarDangerZone(onClear: () -> Unit) {
+fun LeftSidebarDangerZone(viewModel: DailyViewModel?, onClear: () -> Unit) {
     Text("Danger Zone", modifier = Modifier.padding(start = 28.dp, bottom = 12.dp))
     NavigationDrawerItem(
-        label = { Text("Clear All Data") },
+        label = {
+            Text(
+                text = "Clear All Data",
+                color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        },
         selected = false,
         onClick = onClear,
-        icon = { Icon(Icons.Default.Delete, null) })
+        icon = {
+            Icon(
+                Icons.Default.Delete,
+                null,
+                tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
+            )
+        })
 }
 
 @Composable
