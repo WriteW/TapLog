@@ -1,5 +1,9 @@
 package com.roroi.taplog.daily.subUi
 
+import android.graphics.RenderEffect
+import android.graphics.Shader
+import android.os.Build
+import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,6 +14,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,6 +37,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -44,22 +50,32 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import com.roroi.taplog.daily.CompactDiaryCard
+import com.roroi.taplog.daily.CroppedDisplayImage
 import com.roroi.taplog.daily.DailyTimeTheme
+import com.roroi.taplog.daily.cardTransparentScale
 import com.roroi.taplog.daily.darken
+import com.roroi.taplog.daily.getTextColor
 import com.roroi.taplog.daily.soBiscuitFont
 import com.roroi.taplog.daily.subScreen.NameSpace
 import com.roroi.taplog.daily.subScreen.ThemeEditorCircle
+import com.roroi.taplog.daily.viewmodel.CropParams
+import com.roroi.taplog.daily.viewmodel.DailyEntry
 import com.roroi.taplog.daily.viewmodel.DailyViewModel
+import com.roroi.taplog.daily.viewmodel.EntryType
 import com.roroi.taplog.daily.viewmodel.TimelineGroup
 import com.roroi.taplog.daily.viewmodel.getDotColor
 import dev.chrisbanes.haze.HazeState
@@ -329,9 +345,15 @@ fun RightSidebarContent(
                 contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 40.dp),
                 state = listState
             ) {
+                var isPSECount = 0
                 itemsIndexed(groups) { index, group ->
+                    val isPreSizeEven = groups.first() != group && groups[index - 1].items.size % 2 == 0
+                    if (isPreSizeEven) isPSECount += 1
+
+                    Log.d("the dog is a lie", "index: $index ;isPreSizeEven: ${groups.first() != group && groups[index - 1].items.size % 2 == 0}")
                     RightSidebarGroupItem(
                         index = index, // 传入索引
+                        isReverseSide = isPSECount % 2 != 0, // 如果为奇数
                         group = group,
                         viewModel = viewModel,
                         theme = theme,
@@ -346,6 +368,7 @@ fun RightSidebarContent(
 @Composable
 fun RightSidebarGroupItem(
     index: Int,
+    isReverseSide: Boolean,// 上一个entries的size是否为偶数，如果是则反转初始isRight
     group: TimelineGroup,
     viewModel: DailyViewModel,
     theme: DailyTimeTheme,
@@ -362,162 +385,153 @@ fun RightSidebarGroupItem(
 
     // 偶数行(0,2,4) -> 内容在右，时间在左
     // 奇数行(1,3,5) -> 内容在左，时间在右
-    val isFirstEntryRight = index % 2 == 0
+    val isFirstEntryRight = (index % 2 == 0) xor isReverseSide
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-    ) {
-        // 1. 中轴线
-        Canvas(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(2.dp)
-                .align(Alignment.Center)
+    Column(modifier = Modifier.fillMaxWidth().drawBehind {
+        // 画贯穿整个组的中轴线
+        drawLine(
+            color = Color(0xFFE0E0E0),
+            start = androidx.compose.ui.geometry.Offset(size.width / 2f, 0f),
+            end = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height),
+            strokeWidth = 2.dp.toPx()
+        )
+    }) {
+
+        // --- 第一行：根据 isFirstEntryRight 决定布局 ---
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
         ) {
-            drawRect(color = Color(0xFFE0E0E0))
-        }
-
-        Column(modifier = Modifier.fillMaxWidth()) {
-
-            // --- 第一行：根据 isFirstEntryRight 决定布局 ---
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top
-            ) {
-                // [左侧区域]
-                if (isFirstEntryRight) {
-                    // A情况：时间在左 (靠右对齐，贴近中线)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 12.dp), contentAlignment = Alignment.TopEnd
-                    ) {
-                        TimeJumpButton(
-                            time = timeStr,
-                            date = dateStr,
-                            theme = theme,
-                            alignment = Alignment.End,
-                            onClick = onTimeClick
-                        )
-                    }
-                } else {
-                    // B情况：内容在左 (靠右对齐，贴近中线)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .background(Color.Transparent)
-                            .padding(end = 12.dp), contentAlignment = Alignment.TopEnd
-                    ) {
-                        if (entries.isNotEmpty()) CompactDiaryCard(
-                            entries[0],
-                            viewModel
-                        )
-                    }
-                }
-
-                // [中间圆点]
+            // [左侧区域]
+            if (isFirstEntryRight) {
+                // A情况：时间在左 (靠右对齐，贴近中线)
                 Box(
                     modifier = Modifier
-                        .width(16.dp)
-                        .height(24.dp),
-                    contentAlignment = Alignment.Center
+                        .weight(1f)
+                        .padding(end = 12.dp), contentAlignment = Alignment.TopEnd
                 ) {
-                    Canvas(modifier = Modifier.size(10.dp)) {
-                        drawCircle(
-                            color = group.getDotColor(),
-                            radius = size.minDimension / 2 + 2.dp.toPx()
-                        )
-                        drawCircle(color = dotColor, radius = size.minDimension / 2)
-                    }
+                    TimeLineTime(
+                        time = timeStr,
+                        date = dateStr,
+                        theme = theme,
+                        alignment = Alignment.End,
+                        onClick = onTimeClick
+                    )
                 }
-
-                // [右侧区域]
-                if (isFirstEntryRight) {
-                    // A情况：内容在右 (靠左对齐，贴近中线)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 12.dp), contentAlignment = Alignment.TopStart
-                    ) {
-                        if (entries.isNotEmpty()) CompactDiaryCard(
-                            entries[0],
-                            viewModel
-                        )
-                    }
-                } else {
-                    // B情况：时间在右 (靠左对齐，贴近中线)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(start = 12.dp), contentAlignment = Alignment.TopStart
-                    ) {
-                        TimeJumpButton(
-                            time = timeStr,
-                            date = dateStr,
-                            theme = theme,
-                            alignment = Alignment.Start,
-                            onClick = onTimeClick
-                        )
-                    }
+            } else {
+                // B情况：内容在左 (靠右对齐，贴近中线)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .background(Color.Transparent)
+                        .padding(end = 12.dp), contentAlignment = Alignment.TopEnd
+                ) {
+                    if (entries.isNotEmpty()) CompactDiaryCard(
+                        entries[0],
+                        viewModel
+                    )
                 }
             }
 
-            // --- 组内后续内容：交错排列 ---
-            if (entries.size > 1) {
-                Spacer(modifier = Modifier.height(12.dp))
+            // [中间圆点]
+            Box(
+                modifier = Modifier
+                    .width(16.dp)
+                    .height(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.size(10.dp)) {
+                    drawCircle(
+                        color = group.getDotColor(),
+                        radius = size.minDimension / 2 + 2.dp.toPx()
+                    )
+                    drawCircle(color = dotColor, radius = size.minDimension / 2)
+                }
+            }
 
-                entries.drop(1).forEachIndexed { subIndex, entry ->
-                    // 计算逻辑：
-                    // 如果首条在右 (isFirstEntryRight=true)，则次条(subIndex=0)应该在左
-                    // 如果首条在左 (isFirstEntryRight=false)，则次条(subIndex=0)应该在右
-                    val isCurrentSubItemLeft = if (isFirstEntryRight) {
-                        subIndex % 2 == 0 // true -> Left
+            // [右侧区域]
+            if (isFirstEntryRight) {
+                // A情况：内容在右 (靠左对齐，贴近中线)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 12.dp), contentAlignment = Alignment.TopStart
+                ) {
+                    if (entries.isNotEmpty()) CompactDiaryCard(
+                        entries[0],
+                        viewModel
+                    )
+                }
+            } else {
+                // B情况：时间在右 (靠左对齐，贴近中线)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 12.dp), contentAlignment = Alignment.TopStart
+                ) {
+                    TimeLineTime(
+                        time = timeStr,
+                        date = dateStr,
+                        theme = theme,
+                        alignment = Alignment.Start,
+                        onClick = onTimeClick
+                    )
+                }
+            }
+        }
+
+        // --- 组内后续内容：交错排列 ---
+        if (entries.size > 1) {
+            Spacer(modifier = Modifier.height(12.dp))
+
+            entries.drop(1).forEachIndexed { subIndex, entry ->
+                // 计算逻辑：
+                // 如果首条在右 (isFirstEntryRight=true)，则次条(subIndex=0)应该在左
+                // 如果首条在左 (isFirstEntryRight=false)，则次条(subIndex=0)应该在右
+                val isCurrentSubItemLeft = if (isFirstEntryRight) {
+                    subIndex % 2 == 0 // true -> Left
+                } else {
+                    subIndex % 2 != 0 // false -> Right (Corrected logic)
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                ) {
+                    if (isCurrentSubItemLeft) {
+                        // 内容在左
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 12.dp), contentAlignment = Alignment.CenterEnd
+                        ) {
+                            CompactDiaryCard(entry, viewModel)
+                        }
+                        Spacer(modifier = Modifier.width(16.dp)) // 中轴占位
+                        Spacer(modifier = Modifier.weight(1f))     // 右侧留白
                     } else {
-                        subIndex % 2 != 0 // false -> Right (Corrected logic)
-                    }
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp)
-                    ) {
-                        if (isCurrentSubItemLeft) {
-                            // 内容在左
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(end = 12.dp), contentAlignment = Alignment.CenterEnd
-                            ) {
-                                CompactDiaryCard(entry, viewModel)
-                            }
-                            Spacer(modifier = Modifier.width(16.dp)) // 中轴占位
-                            Spacer(modifier = Modifier.weight(1f))     // 右侧留白
-                        } else {
-                            // 内容在右
-                            Spacer(modifier = Modifier.weight(1f))     // 左侧留白
-                            Spacer(modifier = Modifier.width(16.dp)) // 中轴占位
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(start = 12.dp),
-                                contentAlignment = Alignment.CenterStart
-                            ) {
-                                CompactDiaryCard(entry, viewModel)
-                            }
+                        // 内容在右
+                        Spacer(modifier = Modifier.weight(1f))     // 左侧留白
+                        Spacer(modifier = Modifier.width(16.dp)) // 中轴占位
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(start = 12.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            CompactDiaryCard(entry, viewModel)
                         }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(24.dp))
         }
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
 @Composable
-fun TimeJumpButton(
+fun TimeLineTime(
     time: String,
     date: String,
     theme: DailyTimeTheme,
@@ -535,7 +549,6 @@ fun TimeJumpButton(
             // (B) 自定义点击事件和波纹
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                // [重点修复] 使用新的 ripple() API，而不是 rememberRipple
                 indication = ripple(color = rippleColor),
                 onClick = onClick
             )
@@ -555,6 +568,72 @@ fun TimeJumpButton(
                 style = MaterialTheme.typography.bodySmall,
                 color = theme.onSurfaceColor.copy(alpha = 0.6f)
             )
+        }
+    }
+}
+
+// Entries in Timeline
+@Composable
+fun CompactDiaryCard(
+    entry: DailyEntry,
+    viewModel: DailyViewModel
+) {
+    if (entry.type == EntryType.TEXT) {
+        val textBg =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Color.White.copy(alpha = cardTransparentScale) else Color.White
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { viewModel.navigateToEditor(entry.id) }
+        ) {
+            // 1. 底层：专门负责模糊的背景层
+            Box(
+                modifier = Modifier
+                    .matchParentSize() // 填充整个父布局
+                    .background(textBg)
+                    .graphicsLayer {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            // 这里设置模糊，只会影响背景色
+                            renderEffect = RenderEffect
+                                .createBlurEffect(80f, 80f, Shader.TileMode.MIRROR)
+                                .asComposeRenderEffect()
+                        }
+                    }
+            )
+            Text(
+                text = entry.content,
+                modifier = Modifier.padding(12.dp),
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+                color = getTextColor(false),
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+    } else {
+        val file = viewModel.getFullImagePath(entry.content)
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            shadowElevation = 1.dp,
+            color = Color.White,
+            modifier = Modifier.clickable {
+                viewModel.showImage(entry)
+            }
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(100.dp)
+                    .aspectRatio(entry.imageRatio)
+                    .clipToBounds()
+            ) {
+                // Reusing the crop logic but statically
+                CroppedDisplayImage(
+                    file = file,
+                    scaleAdjustment = 0.5f, // Smaller scale for sidebar
+                    cropParams = entry.cropParams ?: CropParams()
+                )
+            }
         }
     }
 }
