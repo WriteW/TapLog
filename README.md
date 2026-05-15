@@ -12,11 +12,3 @@
     <a href="https://github.com/WriteW/TapLog/issues"><img alt="Issues" src="https://img.shields.io/badge/feedback-Issues-blue?logo=github&labelColor=gray"></a>
     <a href="https://x.com/LiuRoroi16397"><img alt="X (Twitter)" src="https://img.shields.io/badge/follow-%40LiuRoroi16397-black?logo=x&labelColor=gray"></a>
 </p>
-
-
-
-To keep the UI visually consistent, some parts of the app may mix Chinese and English.
-If anything feels unclear, you can use tools like ChatGPT for help.
----
-为了整体界面看起来更顺眼，这个应用里有些地方会出现中英混用的情况。
-如果有不太好理解的地方，可以用 ChatGPT 帮忙看看。
