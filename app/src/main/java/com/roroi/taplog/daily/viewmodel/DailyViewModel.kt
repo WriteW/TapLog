@@ -32,6 +32,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     private val _groupedEntries = MutableStateFlow<List<TimelineGroup>>(emptyList())
     val groupedEntries = _groupedEntries.asStateFlow()
     private val _editorState = MutableStateFlow(EditorState())
+    private var currentUnlockedPassword: String? = null
     val editorState = _editorState.asStateFlow()
     fun startEditing(entryId: String?) {
         val entry = getEntryFromId(entryId)
@@ -183,18 +184,26 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+    // 修改更改密码逻辑
+    fun changeSpacePassword(oldPass: String, newPass: String) {
+        val space = getSpaceFromId(selectedDSpaceId) ?: return
 
-    fun exitToMainSpace() {
-        if (selectedDSpaceId != null) {
-            selectedDSpaceId = null
-            viewModelScope.launch {
-                showLoadingDialog = true
-                loadData()
-                showLoadingDialog = false
-            }
+        if (newPass.isBlank()) {
+            // 取消密码
+            currentUnlockedPassword = null
+            repository.saveSpace(space.copy(isEncrypted = false, password = ""))
+            // 删除现存的加密文件(如果有的话)
+            val encryptedFile = File(getApplication<Application>().getExternalFilesDir(null), "daily/${space.id}.${com.roroi.taplog.daily.viewmodel.encryption.CryptoManager.SUFFIX}")
+            if (encryptedFile.exists()) encryptedFile.delete()
+            toastOut("密码已移除")
+        } else {
+            // 修改或新增密码
+            currentUnlockedPassword = newPass
+            repository.saveSpace(space.copy(isEncrypted = true, password = ""))
+            toastOut("密码设置成功，将在退出时生效")
         }
+        loadSpaces()
     }
-
     fun changeEntryFId(entryId: String, spaceId: String) {
         viewModelScope.launch {
             val space = getSpaceFromId(spaceId) ?: return@launch
@@ -243,19 +252,75 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             spaces = repository.loadSpace()
         }
+    fun verifyAndEnterSpace(password: String) {
+        val spaceId = spaceDestination ?: return
+        val space = spaces.find { it.id == spaceId } ?: return
 
-    fun changeSpace() {
-        val spaceId = spaceDestination
-        if (spaceId == null) return
-        Log.d("DailyViewModel", "Switching to space: $spaceId")
-        val spaceToChange = spaces.find { it.id == spaceId }
-        if (spaceToChange == null) return
-        selectedDSpaceId = spaceId
         viewModelScope.launch {
             showLoadingDialog = true
-            loadData()
-            delay(500)
+            if (space.isEncrypted) {
+                // 调用解密逻辑
+                val success = com.roroi.taplog.daily.viewmodel.encryption.unlockAndEnter(
+                    getApplication(), password, space.id
+                )
+                if (success) {
+                    currentUnlockedPassword = password // 验证成功，保存在内存中供退出时加密使用
+                    selectedDSpaceId = spaceId
+                    loadData()
+                    showPasswordCheck = false
+                } else {
+                    toastOut("密码错误或文件损坏❌")
+                }
+            } else {
+                selectedDSpaceId = spaceId
+                loadData()
+                showPasswordCheck = false
+            }
             showLoadingDialog = false
+        }
+    }
+
+    fun changeSpace() {
+        val spaceId = spaceDestination ?: return
+        val spaceToChange = spaces.find { it.id == spaceId } ?: return
+
+        // 如果空间没有加密，直接进；如果加密了，触发输入密码对话框
+        if (spaceToChange.isEncrypted) {
+            showPasswordCheck = true
+        } else {
+            selectedDSpaceId = spaceId
+            viewModelScope.launch {
+                showLoadingDialog = true
+                loadData()
+                delay(500)
+                showLoadingDialog = false
+            }
+        }
+    }
+    // 修改退回主空间的逻辑
+    fun exitToMainSpace() {
+        if (selectedDSpaceId != null) {
+            viewModelScope.launch {
+                showLoadingDialog = true
+                lockCurrentSpaceIfNeeded() // 退出前加密擦除明文
+                selectedDSpaceId = null
+                loadData()
+                showLoadingDialog = false
+            }
+        }
+    }
+    suspend fun lockCurrentSpaceIfNeeded() {
+        val currentSpaceId = selectedDSpaceId ?: return
+        val space = getSpaceFromId(currentSpaceId)
+
+        if (space?.isEncrypted == true && currentUnlockedPassword != null) {
+            com.roroi.taplog.daily.viewmodel.encryption.lockAndExit(
+                getApplication(),
+                currentUnlockedPassword!!,
+                currentSpaceId
+            )
+            // 上锁完成后，擦除内存中的密码
+            currentUnlockedPassword = null
         }
     }
 
