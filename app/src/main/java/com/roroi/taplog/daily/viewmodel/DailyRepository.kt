@@ -105,11 +105,27 @@ class DailyRepository(private val context: Context) {
     }
 
     suspend fun loadSpace(): List<DSpace> = withContext(Dispatchers.IO) {
-        val files =
-            spaceDir.listFiles { _, name -> name.endsWith(".sp") } ?: return@withContext emptyList()
+        val files = spaceDir.listFiles { _, name -> name.endsWith(".sp") } ?: return@withContext emptyList()
         files.mapNotNull { file ->
             try {
-                json.decodeFromString<DSpace>(file.readText())
+                val space = json.decodeFromString<DSpace>(file.readText())
+
+                // === 【核心迁移逻辑】：旧明文密码转为 XOR 加密文件 ===
+                if (space.password.isNotEmpty() && !space.isEncrypted) {
+                    val targetFolder = getDSpaceDir(space.id)
+                    // 使用旧密码加密当前明文文件夹
+                    com.roroi.taplog.daily.viewmodel.encryption.lockAndExit(
+                        context, space.password, space.id
+                    )
+                    // 修改元数据：标记为已加密，彻底清空明文密码
+                    val migratedSpace = space.copy(isEncrypted = true, password = "")
+                    file.writeText(json.encodeToString(migratedSpace)) // 覆写保存
+                    migratedSpace
+                } else {
+                    space
+                }
+                // ===============================================
+
             } catch (e: Exception) {
                 e.printStackTrace()
                 null

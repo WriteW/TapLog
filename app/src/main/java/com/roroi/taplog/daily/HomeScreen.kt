@@ -231,14 +231,7 @@ fun HomeScreen(
         PasswordCheckDialog(
             onDismiss = { viewModel.showPasswordCheck = false },
             onConfirm = { inputPassword ->
-                viewModel.spaces.find { it.id == viewModel.spaceDestination }?.let { space ->
-                    if (space.password == inputPassword) {
-                        viewModel.changeSpace()
-                        viewModel.showPasswordCheck = false
-                    } else {
-                        viewModel.toastOut("密码错误❌")
-                    }
-                }
+                viewModel.verifyAndEnterSpace(inputPassword) // 走新逻辑
             }
         )
     }
@@ -254,12 +247,10 @@ fun HomeScreen(
         ChangePasswordDialog(
             onDismiss = { viewModel.showChangePassword = false },
             onConfirm = { oldPass, newPass ->
-                currentSpace.let {
-                    viewModel.changeSpaceP(it.copy(password = newPass))
-                }
+                viewModel.changeSpacePassword(oldPass, newPass)
                 viewModel.showChangePassword = false
             },
-            !currentSpace.password.isBlank()
+            hasOldPassword = currentSpace.isEncrypted // 使用 isEncrypted 状态
         )
     }
 
@@ -378,25 +369,25 @@ fun HomeScreen(
                     ) {
                         DailyDynamicBackground(theme = currentTheme)
                         // 处理返回键退出空间
-                        BackHandler(
-                            enabled = true
-                        ) {
+                        BackHandler(enabled = true) {
                             if (leftDrawerState.isOpen) {
-                                scope.launch {
-                                    leftDrawerState.close()
-                                }
+                                scope.launch { leftDrawerState.close() }
                             } else if (rightDrawerState.isOpen) {
-                                scope.launch {
-                                    rightDrawerState.close()
-                                }
+                                scope.launch { rightDrawerState.close() }
                             } else if (isAddFABExpand.value) {
                                 isAddFABExpand.value = false
-                            } else if (viewModel.selectedDSpaceId?.isNotBlank() ?: false) {
-                                viewModel.exitToMainSpace()
+                            } else if (viewModel.selectedDSpaceId?.isNotBlank() == true) {
+                                viewModel.exitToMainSpace() // 内部已经包含了加密逻辑
                             } else if (!viewModel.showPasswordCheck) {
-                                (context as? Activity)?.finish()
+                                // 彻底退出应用前确保锁门
+                                scope.launch {
+                                    viewModel.showLoadingDialog = true
+                                    viewModel.lockCurrentSpaceIfNeeded()
+                                    (context as? Activity)?.finish()
+                                }
                             }
                         }
+
 
                         Scaffold(
                             containerColor = Color.Transparent,
@@ -954,18 +945,16 @@ fun DiaryCard(
                                         }
                                     } else {
                                         if (viewModel.hasSpace(entry.id)) {
-                                            val spaceT =
-                                                viewModel.spaces.find { it.entryId == entry.id }
+                                            val spaceT = viewModel.spaces.find { it.entryId == entry.id }
                                             viewModel.setSDestination(spaceT?.id)
-                                            if (spaceT?.password == "") {
-                                                viewModel.changeSpace()
-                                            } else {
+                                            if (spaceT?.isEncrypted == true) { // 改为判断 isEncrypted
                                                 viewModel.showPasswordCheck = true
+                                            } else {
+                                                viewModel.changeSpace()
                                             }
                                         } else {
                                             viewModel.showImage(entry)
                                         }
-                                        // --- 原 onClick 逻辑结束 ---
                                     }
                                 }
                             }
@@ -1097,74 +1086,6 @@ fun Modifier.simpleVerticalScrollbar(
         )
     }
 }
-
-
-// A simpler, non-interactive version of DiaryCard for the sidebar view
-@Composable
-fun CompactDiaryCard(
-    entry: DailyEntry,
-    viewModel: DailyViewModel
-) {
-    if (entry.type == EntryType.TEXT) {
-        val textBg =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Color.White.copy(alpha = cardTransparentScale) else Color.White
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { viewModel.navigateToEditor(entry.id) }
-        ) {
-            // 1. 底层：专门负责模糊的背景层
-            Box(
-                modifier = Modifier
-                    .matchParentSize() // 填充整个父布局
-                    .background(textBg)
-                    .graphicsLayer {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            // 这里设置模糊，只会影响背景色
-                            renderEffect = RenderEffect
-                                .createBlurEffect(80f, 80f, Shader.TileMode.MIRROR)
-                                .asComposeRenderEffect()
-                        }
-                    }
-            )
-            Text(
-                text = entry.content,
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-                color = getTextColor(false),
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-    } else {
-        val file = viewModel.getFullImagePath(entry.content)
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            shadowElevation = 1.dp,
-            color = Color.White,
-            modifier = Modifier.clickable {
-                viewModel.showImage(entry)
-            }
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(100.dp)
-                    .aspectRatio(entry.imageRatio)
-                    .clipToBounds()
-            ) {
-                // Reusing the crop logic but statically
-                CroppedDisplayImage(
-                    file = file,
-                    scaleAdjustment = 0.5f, // Smaller scale for sidebar
-                    cropParams = entry.cropParams ?: CropParams()
-                )
-            }
-        }
-    }
-}
-
 
 // FlowLayout: 流式布局，子组件自动换行
 @Composable

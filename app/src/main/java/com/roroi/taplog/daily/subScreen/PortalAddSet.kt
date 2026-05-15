@@ -53,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -90,6 +92,8 @@ import com.roroi.taplog.daily.viewmodel.DSpace
 import com.roroi.taplog.daily.viewmodel.DailyViewModel
 import com.roroi.taplog.score.OptimizedBackground
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.io.File
 
 @Preview
 @Composable
@@ -140,6 +144,8 @@ fun SelectSpace(
     var currentTheme by remember { mutableStateOf(targetColorList.random()) }
     var showDelDSpaceDialog by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     val ballColor = currentTheme.primaryColor
     val backgroundColor = currentTheme.backgroundColor
@@ -230,16 +236,28 @@ fun SelectSpace(
                 // 新建空间按钮
                 Button(
                     onClick = {
-                        viewModel?.addSpace(
-                            DSpace(
-                                backgroundColor.toArgb(),
-                                ballColor.toArgb(),
-                                entryId = fatherId,
-                                name = newSpaceName,
-                                password = password,
-                                isDark = currentTheme.isDark
-                            )
+                        val isEncrypted = password.isNotBlank()
+                        val newSpace = DSpace(
+                            colorBgArgb = backgroundColor.toArgb(),
+                            colorBallArgb = ballColor.toArgb(),
+                            entryId = fatherId,
+                            name = newSpaceName,
+                            password = "", // 绝对不存明文
+                            isEncrypted = isEncrypted,
+                            isDark = currentTheme.isDark
                         )
+                        viewModel?.addSpace(newSpace)
+
+                        // 如果有密码，需要立即生成一个带密码头的空加密文件，不然下次解密读不到头
+                        if (isEncrypted) {
+                            val ctx = context
+                            scope.launch {
+                                com.roroi.taplog.daily.viewmodel.encryption.lockAndExit(
+                                    ctx, password, newSpace.id
+                                )
+                            }
+                        }
+
                         viewModel?.let {
                             if (!it.hasSpace(fatherId)) {
                                 it.navigatePop()
