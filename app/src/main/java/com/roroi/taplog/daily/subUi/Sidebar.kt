@@ -375,10 +375,8 @@ fun RightSidebarGroupItem(
     onTimeClick: () -> Unit
 ) {
     val dateObj = Date(group.timestamp)
-    val timeStr =
-        remember(group.timestamp) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(dateObj) }
-    val dateStr =
-        remember(group.timestamp) { SimpleDateFormat("MM/dd", Locale.getDefault()).format(dateObj) }
+    val timeStr = remember(group.timestamp) { com.roroi.taplog.daily.TimeFormat.format(dateObj) }
+    val dateStr = remember(group.timestamp) { com.roroi.taplog.daily.DateFormat.format(dateObj) }
 
     val dotColor = viewModel.getTimelineColor(group.timestamp)
     val entries = group.items
@@ -578,62 +576,48 @@ fun CompactDiaryCard(
     entry: DailyEntry,
     viewModel: DailyViewModel
 ) {
-    if (entry.type == EntryType.TEXT) {
-        val textBg =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Color.White.copy(alpha = cardTransparentScale) else Color.White
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { viewModel.navigateToEditor(entry.id) }
-        ) {
-            // 1. 底层：专门负责模糊的背景层
-            Box(
-                modifier = Modifier
-                    .matchParentSize() // 填充整个父布局
-                    .background(textBg)
-                    .graphicsLayer {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            // 这里设置模糊，只会影响背景色
-                            renderEffect = RenderEffect
-                                .createBlurEffect(80f, 80f, Shader.TileMode.MIRROR)
-                                .asComposeRenderEffect()
-                        }
-                    }
-            )
-            Text(
-                text = entry.content,
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-                color = getTextColor(false),
-                fontWeight = FontWeight.Bold
-            )
-        }
+    // 侧边栏的多态路由控制
+    when (entry.type) {
+        EntryType.TEXT -> CompactTextCard(entry, viewModel)
+        EntryType.IMAGE -> CompactImageCard(entry, viewModel)
+    }
+}
 
-    } else {
-        val file = viewModel.getFullImagePath(entry.content)
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            shadowElevation = 1.dp,
-            color = Color.White,
-            modifier = Modifier.clickable {
-                viewModel.showImage(entry)
-            }
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(100.dp)
-                    .aspectRatio(entry.imageRatio)
-                    .clipToBounds()
-            ) {
-                // Reusing the crop logic but statically
-                CroppedDisplayImage(
-                    file = file,
-                    scaleAdjustment = 0.5f, // Smaller scale for sidebar
-                    cropParams = entry.cropParams ?: CropParams()
-                )
-            }
+@Composable
+private fun CompactTextCard(entry: DailyEntry, viewModel: DailyViewModel) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { viewModel.navigateToEditor(entry.id) }
+    ) {
+        com.roroi.taplog.daily.GlassmorphismBackground(modifier = Modifier.matchParentSize()) // 引入复用组件
+        Text(
+            text = entry.content,
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            maxLines = 4,
+            overflow = TextOverflow.Ellipsis,
+            color = getTextColor(false),
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun CompactImageCard(entry: DailyEntry, viewModel: DailyViewModel) {
+    val file = viewModel.getFullImagePath(entry.content)
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        shadowElevation = 1.dp,
+        color = Color.White,
+        modifier = Modifier.clickable { viewModel.showImage(entry) }
+    ) {
+        Box(modifier = Modifier.width(100.dp).aspectRatio(entry.imageRatio).clipToBounds()) {
+            CroppedDisplayImage(
+                file = file,
+                scaleAdjustment = 0.5f,
+                cropParams = entry.cropParams ?: CropParams()
+            )
         }
     }
 }

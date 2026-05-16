@@ -35,3 +35,11 @@ data class TimelineGroup(
 
 fun TimelineGroup.isPin() = items.any { it.isPin }
 fun TimelineGroup.getDotColor() = if (isPin()) GoldenYellow else Color.White
+
+// 【新增】：将判断能否并列显示的逻辑内聚，之后加小录音卡片可直接在这修改
+fun DailyEntry.canDisplayInline(): Boolean =
+    this.type == EntryType.IMAGE && !this.isLarge && this.imageRatio < 1.5f
+
+// 【新增】：是否支持传送门按钮
+fun DailyEntry.supportPortal(): Boolean =
+    this.type == EntryType.IMAGE

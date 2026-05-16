@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.roroi.taplog.daily.DailyTimeTheme
+import com.roroi.taplog.daily.GoldenYellow
 import com.roroi.taplog.daily.generateColorPair
 import com.roroi.taplog.daily.generateColorPalette
 import kotlinx.coroutines.delay
@@ -34,6 +35,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     private val _editorState = MutableStateFlow(EditorState())
     private var currentUnlockedPassword: String? = null
     val editorState = _editorState.asStateFlow()
+
     fun startEditing(entryId: String?) {
         val entry = getEntryFromId(entryId)
 
