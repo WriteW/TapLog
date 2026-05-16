@@ -2,8 +2,6 @@ package com.roroi.taplog.daily.viewmodel
 
 import android.app.Application
 import android.net.Uri
-import android.util.Log
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -13,7 +11,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.roroi.taplog.daily.DailyTimeTheme
-import com.roroi.taplog.daily.generateColorPair
 import com.roroi.taplog.daily.generateColorPalette
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -23,7 +20,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.Calendar
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sin
 
@@ -34,6 +30,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     private val _editorState = MutableStateFlow(EditorState())
     private var currentUnlockedPassword: String? = null
     val editorState = _editorState.asStateFlow()
+
     fun startEditing(entryId: String?) {
         val entry = getEntryFromId(entryId)
 
@@ -102,9 +99,60 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     fun startBatchSelecting() {
         isBatchManaging = true
     }
+    var bindingTargetId: String? by mutableStateOf(null)
+        private set
     fun stopBatchSelecting() {
         isBatchManaging = false
         batchEntries.clear()
+        bindingTargetId = null // 【新增】：退出批量模式时，自动清理合并目标状态
+    }
+    fun startBindingMode(targetId: String) {
+        bindingTargetId = targetId
+        batchEntries.clear()
+        startBatchSelecting()
+    }
+    fun executeBinding() {
+        val targetId = bindingTargetId ?: return
+        if (batchEntries.isEmpty()) {
+            stopBatchSelecting()
+            return
+        }
+
+        viewModelScope.launch {
+            showLoadingDialog = true
+            val targetEntry = getEntryFromId(targetId)
+            if (targetEntry != null) {
+                // 1. 如果目标项还没有分组 ID，生成一个新的
+                val groupId = targetEntry.manualGroupId ?: java.util.UUID.randomUUID().toString()
+                val entriesToUpdate = mutableListOf<DailyEntry>()
+
+                // 2. 将目标项原本组内的兄弟们打上一样的钢印
+                val targetGroup = _groupedEntries.value.find { it.items.any { item -> item.id == targetId } }
+                targetGroup?.items?.forEach { item ->
+                    if (item.manualGroupId != groupId) {
+                        entriesToUpdate.add(item.copy(manualGroupId = groupId))
+                    }
+                }
+
+                // 3. 将用户勾选的所有 Entry 打上目标组的钢印
+                batchEntries.forEach { sourceId ->
+                    val sourceEntry = getEntryFromId(sourceId)
+                    if (sourceEntry != null && sourceEntry.manualGroupId != groupId) {
+                        entriesToUpdate.add(sourceEntry.copy(manualGroupId = groupId))
+                    }
+                }
+
+                // 4. 批量保存并刷新UI
+                entriesToUpdate.forEach { entry ->
+                    repository.saveEntry(entry, selectedDSpaceId)
+                }
+                loadData()
+            }
+
+            // 5. 结束状态
+            stopBatchSelecting()
+            showLoadingDialog = false
+        }
     }
 
     // 存储空间相关状态
@@ -179,13 +227,15 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
                 e.printStackTrace()
                 // _errorEvents.send("移动失败: ${e.message}")
             } finally {
-                // 4. 关闭加载状态
                 showLoadingDialog = false
+                // 【修复】：移动结束后，强制停止多选，清空长按焦点
+                stopBatchSelecting()
+                unFocusEntry()
             }
         }
     }
     // 修改更改密码逻辑
-    fun changeSpacePassword(oldPass: String, newPass: String) {
+    fun changeSpacePassword(newPass: String) {
         val space = getSpaceFromId(selectedDSpaceId) ?: return
 
         if (newPass.isBlank()) {
@@ -433,46 +483,6 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         return Color.hsl(finalHue, saturation, lightness)
     }
 
-    private fun groupEntries(entries: List<DailyEntry>): List<TimelineGroup> {
-        if (entries.isEmpty()) return emptyList()
-
-        val groups = mutableListOf<TimelineGroup>()
-        var currentBatch = mutableListOf<DailyEntry>()
-
-        entries.forEach { entry ->
-            if (currentBatch.isEmpty()) {
-                currentBatch.add(entry)
-            } else {
-                val lastEntry = currentBatch.last()
-                val timeDiff = abs(lastEntry.timestamp - entry.timestamp)
-                val isWithin10Min = timeDiff <= 10 * 60 * 1000
-
-                val isCurrentBig =
-                    entry.type == EntryType.IMAGE && (entry.imageRatio > 1.5f || entry.isLarge)
-                val isLastBig =
-                    lastEntry.type == EntryType.IMAGE && (lastEntry.imageRatio > 1.5f || lastEntry.isLarge)
-
-                // 修改点：检查两者的置顶状态是否相同，而不是直接拒绝所有的置顶项
-                val isSamePinState = lastEntry.isPin == entry.isPin
-
-                // 使用 isSamePinState 替换掉原来的 !isPin
-                if (isWithin10Min && !isCurrentBig && !isLastBig && isSamePinState) {
-                    currentBatch.add(entry)
-                } else {
-                    currentBatch.sortByDescending { it.timestamp }
-                    groups.add(TimelineGroup(currentBatch.first().timestamp, currentBatch))
-                    currentBatch = mutableListOf(entry)
-                }
-            }
-        }
-        if (currentBatch.isNotEmpty()) {
-            currentBatch.sortByDescending { it.timestamp }
-            groups.add(TimelineGroup(currentBatch.first().timestamp, currentBatch))
-        }
-
-        return groups
-    }
-
     fun addTextEntry(content: String) {
         viewModelScope.launch {
             val entry = DailyEntry(
@@ -563,6 +573,94 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             _uiMessage.value = "All data cleared"
         }
     }
+
+    // 【新增给 UI 调用的 API】：将条目从组中踢出，恢复自由身
+    fun unbindEntryFromGroup(entryId: String) {
+        viewModelScope.launch {
+            val entry = getEntryFromId(entryId) ?: return@launch
+            if (entry.manualGroupId != null) {
+                repository.saveEntry(entry.copy(manualGroupId = null), selectedDSpaceId)
+                loadData()
+            }
+        }
+    }
+
+
+    // ===============================================
+    // 2. 【替换原有方法】：升级底层的数据分发排序逻辑
+    // ===============================================
+    private fun groupEntries(entries: List<DailyEntry>): List<TimelineGroup> {
+        if (entries.isEmpty()) return emptyList()
+
+        // 1. 拆分：带有 manualGroupId 的手动绑定项 vs 自由项
+        val manualGroupsMap = mutableMapOf<String, MutableList<DailyEntry>>()
+        val normalEntries = mutableListOf<DailyEntry>()
+
+        entries.forEach { entry ->
+            if (entry.manualGroupId != null) {
+                manualGroupsMap.getOrPut(entry.manualGroupId) { mutableListOf() }.add(entry)
+            } else {
+                normalEntries.add(entry)
+            }
+        }
+
+        val groups = mutableListOf<TimelineGroup>()
+
+        // 2. 装载：强制合体手动绑定的组
+        manualGroupsMap.values.forEach { groupList ->
+            // 组内部按时间倒序排列
+            groupList.sortByDescending { it.timestamp }
+            // 整个组的时间轴位置，以组内最新的时间为准
+            groups.add(TimelineGroup(groupList.first().timestamp, groupList))
+        }
+
+        // 3. 原有逻辑处理：散件（按照时间间距自动合并）
+        normalEntries.sortByDescending { it.timestamp }
+        var currentBatch = mutableListOf<DailyEntry>()
+
+        normalEntries.forEach { entry ->
+            if (currentBatch.isEmpty()) {
+                currentBatch.add(entry)
+            } else {
+                val lastEntry = currentBatch.last()
+                val timeDiff = kotlin.math.abs(lastEntry.timestamp - entry.timestamp)
+                val isWithin10Min = timeDiff <= 10 * 60 * 1000
+
+                val isCurrentBig = entry.type == EntryType.IMAGE && (entry.imageRatio > 1.5f || entry.isLarge)
+                val isLastBig = lastEntry.type == EntryType.IMAGE && (lastEntry.imageRatio > 1.5f || lastEntry.isLarge)
+                val isSamePinState = lastEntry.isPin == entry.isPin
+
+                if (isWithin10Min && !isCurrentBig && !isLastBig && isSamePinState) {
+                    currentBatch.add(entry)
+                } else {
+                    currentBatch.sortByDescending { it.timestamp }
+                    groups.add(TimelineGroup(currentBatch.first().timestamp, currentBatch))
+                    currentBatch = mutableListOf(entry)
+                }
+            }
+        }
+        if (currentBatch.isNotEmpty()) {
+            currentBatch.sortByDescending { it.timestamp }
+            groups.add(TimelineGroup(currentBatch.first().timestamp, currentBatch))
+        }
+
+        // 4. 将所有产生的组（手动绑定的 + 自动算出来的），最终在页面上按时间轴严密排序返回
+        return groups.sortedWith(
+            compareByDescending<TimelineGroup> { it.isPin() }
+                .thenByDescending { it.timestamp }
+        )
+    }
+
+    var radialMenuEntryId: String? by mutableStateOf(null)
+        private set
+
+    fun openRadialMenu(id: String) {
+        radialMenuEntryId = id
+    }
+
+    fun closeRadialMenu() {
+        radialMenuEntryId = null
+    }
 }
 
 data class TransformData(
@@ -612,3 +710,4 @@ data class EditorState(
     val isDirty: Boolean = false,
     val isNew: Boolean = true
 )
+

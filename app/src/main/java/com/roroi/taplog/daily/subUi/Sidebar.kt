@@ -1,21 +1,18 @@
 package com.roroi.taplog.daily.subUi
 
-import android.graphics.RenderEffect
-import android.graphics.Shader
-import android.os.Build
+import android.content.Intent
 import android.util.Log
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,8 +24,11 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Output
 import androidx.compose.material.icons.filled.Password
@@ -45,6 +45,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,9 +54,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asComposeRenderEffect
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,9 +64,9 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.roroi.taplog.Tap
 import com.roroi.taplog.daily.CroppedDisplayImage
 import com.roroi.taplog.daily.DailyTimeTheme
-import com.roroi.taplog.daily.cardTransparentScale
 import com.roroi.taplog.daily.darken
 import com.roroi.taplog.daily.getTextColor
 import com.roroi.taplog.daily.soBiscuitFont
@@ -78,14 +78,123 @@ import com.roroi.taplog.daily.viewmodel.DailyViewModel
 import com.roroi.taplog.daily.viewmodel.EntryType
 import com.roroi.taplog.daily.viewmodel.TimelineGroup
 import com.roroi.taplog.daily.viewmodel.getDotColor
+import com.roroi.taplog.score.Score
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
+data class NavModuleItem(
+    val name: String,
+    val cls: Class<*>
+)
+
+val otherAppModules = listOf(
+    NavModuleItem("Tap", Tap::class.java),
+    NavModuleItem("Log", com.roroi.taplog.Log::class.java),
+    NavModuleItem("Stream", com.roroi.taplog.stream.MainActivity::class.java),
+    NavModuleItem("Score", Score::class.java) // 假设你的 Score 叫这个名字，按需修改
+)
+// ============== 修改：带展开功能的 Danger Zone ==============
+@Composable
+fun LeftSidebarDangerZone(viewModel: DailyViewModel?, onClear: () -> Unit) {
+    // 控制是否展开状态，默认 false 收起，防止误触
+    var expanded by remember { mutableStateOf(false) }
+    val theme = viewModel?.getThemeBySpace() ?: DailyTimeTheme.getCurrent()
+
+    Column {
+        // 点击整行都可以切换展开状态
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(start = 28.dp, end = 24.dp, bottom = 12.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Danger Zone",
+                color = Color.Red.copy(alpha = 0.8f),
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = "Expand Danger Zone",
+                tint = Color.Red.copy(alpha = 0.8f)
+            )
+        }
+
+        // 动画展开/收起具体内容
+        AnimatedVisibility(visible = expanded) {
+            NavigationDrawerItem(
+                label = {
+                    Text("Clear All Data", color = theme.onSurfaceColor)
+                },
+                selected = false,
+                onClick = onClear,
+                icon = {
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = theme.onSurfaceColor)
+                },
+                modifier = Modifier.padding(horizontal = 12.dp) // 让子项往里缩一点更好看
+            )
+        }
+    }
+}
+
+// ============== 新增：带展开功能的 Others 模块跳转区 ==============
+@Composable
+fun LeftSidebarOthers(theme: DailyTimeTheme) {
+    // 默认收起或展开取决于你的需求，这里默认收起
+    var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(start = 28.dp, end = 24.dp, bottom = 12.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Others",
+                color = theme.onSurfaceColor,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = "Expand Others",
+                tint = theme.onSurfaceColor
+            )
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column {
+                // 遍历刚才定义的 List 自动生成按钮
+                otherAppModules.forEach { item ->
+                    NavigationDrawerItem(
+                        label = {
+                            Text(item.name, color = theme.onSurfaceColor)
+                        },
+                        selected = false,
+                        onClick = {
+                            // 触发跳转
+                            val intent = Intent(context, item.cls)
+                            context.startActivity(intent)
+                        },
+                        icon = {
+                            // 使用统一的退出小图标
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = theme.onSurfaceColor)
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                }
+            }
+        }
+    }
+}
 // 左侧栏预览
 @Preview
 @Composable
@@ -133,6 +242,12 @@ fun LeftSidebarContent(
             LeftSideSpaceEditor(viewModel)
             HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp, horizontal = 28.dp))
         }
+
+        // 挂载 Others 栏
+        LeftSidebarOthers(theme = theme)
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 28.dp))
+
+        // 挂载 Danger Zone 栏
         LeftSidebarDangerZone(viewModel = viewModel) { clearConfirmCount = 1 }
     }
 }
@@ -270,27 +385,6 @@ fun LeftSidebarActions(viewModel: DailyViewModel?, onExport: () -> Unit, onImpor
 }
 
 @Composable
-fun LeftSidebarDangerZone(viewModel: DailyViewModel?, onClear: () -> Unit) {
-    Text("Danger Zone", modifier = Modifier.padding(start = 28.dp, bottom = 12.dp))
-    NavigationDrawerItem(
-        label = {
-            Text(
-                text = "Clear All Data",
-                color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
-            )
-        },
-        selected = false,
-        onClick = onClear,
-        icon = {
-            Icon(
-                Icons.Default.Delete,
-                null,
-                tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
-            )
-        })
-}
-
-@Composable
 fun RightSidebarContent(
     listState: LazyListState,
     scope: CoroutineScope,
@@ -375,10 +469,8 @@ fun RightSidebarGroupItem(
     onTimeClick: () -> Unit
 ) {
     val dateObj = Date(group.timestamp)
-    val timeStr =
-        remember(group.timestamp) { SimpleDateFormat("HH:mm", Locale.getDefault()).format(dateObj) }
-    val dateStr =
-        remember(group.timestamp) { SimpleDateFormat("MM/dd", Locale.getDefault()).format(dateObj) }
+    val timeStr = remember(group.timestamp) { com.roroi.taplog.daily.TimeFormat.format(dateObj) }
+    val dateStr = remember(group.timestamp) { com.roroi.taplog.daily.DateFormat.format(dateObj) }
 
     val dotColor = viewModel.getTimelineColor(group.timestamp)
     val entries = group.items
@@ -578,62 +670,48 @@ fun CompactDiaryCard(
     entry: DailyEntry,
     viewModel: DailyViewModel
 ) {
-    if (entry.type == EntryType.TEXT) {
-        val textBg =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Color.White.copy(alpha = cardTransparentScale) else Color.White
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { viewModel.navigateToEditor(entry.id) }
-        ) {
-            // 1. 底层：专门负责模糊的背景层
-            Box(
-                modifier = Modifier
-                    .matchParentSize() // 填充整个父布局
-                    .background(textBg)
-                    .graphicsLayer {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            // 这里设置模糊，只会影响背景色
-                            renderEffect = RenderEffect
-                                .createBlurEffect(80f, 80f, Shader.TileMode.MIRROR)
-                                .asComposeRenderEffect()
-                        }
-                    }
-            )
-            Text(
-                text = entry.content,
-                modifier = Modifier.padding(12.dp),
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis,
-                color = getTextColor(false),
-                fontWeight = FontWeight.Bold
-            )
-        }
+    // 侧边栏的多态路由控制
+    when (entry.type) {
+        EntryType.TEXT -> CompactTextCard(entry, viewModel)
+        EntryType.IMAGE -> CompactImageCard(entry, viewModel)
+    }
+}
 
-    } else {
-        val file = viewModel.getFullImagePath(entry.content)
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            shadowElevation = 1.dp,
-            color = Color.White,
-            modifier = Modifier.clickable {
-                viewModel.showImage(entry)
-            }
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(100.dp)
-                    .aspectRatio(entry.imageRatio)
-                    .clipToBounds()
-            ) {
-                // Reusing the crop logic but statically
-                CroppedDisplayImage(
-                    file = file,
-                    scaleAdjustment = 0.5f, // Smaller scale for sidebar
-                    cropParams = entry.cropParams ?: CropParams()
-                )
-            }
+@Composable
+private fun CompactTextCard(entry: DailyEntry, viewModel: DailyViewModel) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { viewModel.navigateToEditor(entry.id) }
+    ) {
+        com.roroi.taplog.daily.GlassmorphismBackground(modifier = Modifier.matchParentSize()) // 引入复用组件
+        Text(
+            text = entry.content,
+            modifier = Modifier.padding(12.dp),
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            maxLines = 4,
+            overflow = TextOverflow.Ellipsis,
+            color = getTextColor(false),
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun CompactImageCard(entry: DailyEntry, viewModel: DailyViewModel) {
+    val file = viewModel.getFullImagePath(entry.content)
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        shadowElevation = 1.dp,
+        color = Color.White,
+        modifier = Modifier.clickable { viewModel.showImage(entry) }
+    ) {
+        Box(modifier = Modifier.width(100.dp).aspectRatio(entry.imageRatio).clipToBounds()) {
+            CroppedDisplayImage(
+                file = file,
+                scaleAdjustment = 0.5f,
+                cropParams = entry.cropParams ?: CropParams()
+            )
         }
     }
 }

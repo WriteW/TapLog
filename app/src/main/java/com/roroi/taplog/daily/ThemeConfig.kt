@@ -3,6 +3,7 @@ package com.roroi.taplog.daily
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import java.util.Calendar
+import kotlin.math.abs
 
 /**
  * 基于主色自动生成搭配的深色辅助色
@@ -28,34 +29,27 @@ fun generateColorPair(primaryColor: Color): Pair<Color, Color> {
     return Pair(primaryColor, darkAccent)
 }
 
-    /**
- * 基于主色生成一组 Material 风格的渐变色
- * @param primaryColor 主色（最深色）
- * @param count 生成颜色数量，默认4个
- * @return 从浅到深排列的颜色列表
- */
 fun generateColorPalette(primaryColor: Color, count: Int = 4): List<Color> {
-    // 提取 HSL 分量
-    val hsl = FloatArray(3)
-    android.graphics.Color.colorToHSV(primaryColor.toArgb(), hsl)
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(primaryColor.toArgb(), hsv)
 
-    val hue = hsl[0]      // 色相 (0-360)
-    val saturation = hsl[1]  // 饱和度 (0-1)
-
-    // 根据主色的亮度确定深浅变体
-    // 亮度越高(接近白色) -> 主色偏浅；亮度越低(接近黑色) -> 主色偏深
-    val value = hsl[2].coerceIn(0.2f, 0.8f)  // 主色亮度范围限制
+    val baseHue = hsv[0]      // 色相 (0-360)
+    val baseSat = hsv[1]      // 饱和度 (0-1)
+    val baseVal = hsv[2]      // 亮度 (0-1)
 
     return List(count) { index ->
-        // index: 0最浅, count-1最深(主色)
-        val lightness = when (index) {
-            0 -> (value + 0.3f).coerceAtMost(0.95f)  // 最浅：+30%亮度
-            1 -> (value + 0.15f).coerceAtMost(0.85f) // 次浅：+15%亮度
-            2 -> (value - 0.15f).coerceAtLeast(0.35f) // 次深：-15%亮度
-            else -> value  // 主色
-        }
+        // 1. 色相偏移：生成邻近色（每步偏移 15~20 度，创造多色融合感）
+        // 例如：如果是黄色，会生成橘黄、柠檬黄、黄绿等相邻颜色，极其自然
+        val hueShift = (index - count / 2f) * 20f
+        val newHue = (baseHue + hueShift + 360) % 360
 
-        Color.hsv(hue, saturation, lightness)
+        // 2. 饱和度保护：避免太灰变脏，保持色彩鲜艳
+        val newSat = (baseSat - abs(index - count / 2f) * 0.08f).coerceIn(0.5f, 1f)
+
+        // 3. 亮度微调：不要降得太低，防止出现“死黑色”或“泥巴色”
+        val newVal = (baseVal + (index % 2 * 0.1f)).coerceIn(0.7f, 1f)
+
+        Color.hsv(newHue, newSat, newVal)
     }
 }
 // 将 enum class 改为 data class 以支持动态构造

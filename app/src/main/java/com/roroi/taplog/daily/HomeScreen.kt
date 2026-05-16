@@ -1,7 +1,7 @@
 package com.roroi.taplog.daily
 
+import android.annotation.SuppressLint
 import android.app.Activity
-import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.util.Log
@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.EaseOutSine
 import androidx.compose.animation.core.animateDpAsState
@@ -53,7 +54,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.SensorDoor
 import androidx.compose.material.icons.filled.SubdirectoryArrowRight
@@ -98,11 +102,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -113,6 +119,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.size.Scale
@@ -129,7 +136,9 @@ import com.roroi.taplog.daily.viewmodel.DailyViewModel
 import com.roroi.taplog.daily.viewmodel.EntryType
 import com.roroi.taplog.daily.viewmodel.TimelineGroup
 import com.roroi.taplog.daily.viewmodel.calculateTransform
+import com.roroi.taplog.daily.viewmodel.canDisplayInline
 import com.roroi.taplog.daily.viewmodel.getDotColor
+import com.roroi.taplog.daily.viewmodel.supportPortal
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
 import kotlinx.coroutines.delay
@@ -151,6 +160,79 @@ private val GAP_WIDTH = 24.dp
 private val TOTAL_SIDEBAR_WIDTH = TEXT_AREA_WIDTH + GAP_WIDTH
 private val DOT_SIZE = 12.dp
 private val CARD_TOP_OFFSET = 12.dp
+
+@SuppressLint("ConstantLocale")
+val TimeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+@SuppressLint("ConstantLocale")
+val DateFormat = SimpleDateFormat("MM/dd", Locale.getDefault())
+
+@SuppressLint("ConstantLocale")
+val YearFormat = SimpleDateFormat("yyyy", Locale.getDefault())
+
+@SuppressLint("ConstantLocale")
+val FullDateFormat = SimpleDateFormat("yyyy年MM月dd日 EEEE", Locale.getDefault())
+
+@Composable
+fun GlassmorphismBackground(
+    modifier: Modifier = Modifier,
+    alpha: Float = cardTransparentScale,
+    blurRadius: Float = 80f
+) {
+    val isAndroidS = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val textBg = if (isAndroidS) Color.White.copy(alpha = alpha) else Color.White
+    Box(
+        modifier = modifier
+            .background(textBg)
+            .graphicsLayer {
+                if (isAndroidS) {
+                    renderEffect = android.graphics.RenderEffect
+                        .createBlurEffect(blurRadius, blurRadius, Shader.TileMode.MIRROR)
+                        .asComposeRenderEffect()
+                }
+            }
+    )
+}
+
+fun Modifier.diaryGestures(
+    entryId: String,
+    viewModel: DailyViewModel,
+    haptic: HapticFeedback,
+    onClick: () -> Unit
+): Modifier = this.pointerInput(entryId) {
+    awaitEachGesture {
+        awaitFirstDown()
+        try {
+            withTimeout(longClickMs) {
+                val up = waitForUpOrCancellation()
+                if (up != null) {
+                    up.consume()
+                    if (viewModel.isBatchManaging) {
+                        if (viewModel.batchEntries.contains(entryId)) {
+                            viewModel.batchEntries.remove(entryId)
+                        } else {
+                            viewModel.batchEntries.add(entryId)
+                        }
+                    } else {
+                        onClick()
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (viewModel.selectedEntryId != entryId) {
+                viewModel.selectEntry(entryId)
+            } else {
+                viewModel.unFocusEntry()
+            }
+            var event: PointerEvent
+            do {
+                event = awaitPointerEvent()
+                event.changes.forEach { it.consume() }
+            } while (event.changes.any { it.pressed })
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -175,7 +257,6 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
 
     val hazeState = remember { HazeState() }
-    val isDark = viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.isDark ?: false // 当前空间是否为暗色
 
     // 导入：打开文件
     val importLauncher = rememberLauncherForActivityResult(
@@ -247,7 +328,7 @@ fun HomeScreen(
         ChangePasswordDialog(
             onDismiss = { viewModel.showChangePassword = false },
             onConfirm = { oldPass, newPass ->
-                viewModel.changeSpacePassword(oldPass, newPass)
+                viewModel.changeSpacePassword(newPass)
                 viewModel.showChangePassword = false
             },
             hasOldPassword = currentSpace.isEncrypted // 使用 isEncrypted 状态
@@ -392,88 +473,59 @@ fun HomeScreen(
                         Scaffold(
                             containerColor = Color.Transparent,
                             topBar = {
-                                val spaceColor =
-                                    viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.colorBgArgb
-                                val finalColor = spaceColor?.let {
-                                    Color(it).copy(alpha = 0.5f)
-                                } ?: Color.White.copy(alpha = 0.5f)
-                                CenterAlignedTopAppBar(
-                                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                                        containerColor = finalColor
-                                    ),
-                                    // 打开左侧栏
-                                    navigationIcon = {
-                                        IconButton(onClick = { scope.launch { leftDrawerState.open() } }) {
-                                            Icon(
-                                                Icons.Default.Menu,
-                                                contentDescription = "Menu",
-                                                tint = currentTheme.onSurfaceColor
-                                            )
-                                        }
-                                    },
-                                    actions = {
-                                        if (viewModel.isBatchManaging) {
-                                            IconButton({
-                                                viewModel.stopBatchSelecting()
-                                            }) {
-                                                Icon(
-                                                    Icons.Default.Close,
-                                                    contentDescription = "stop batch-managing",
-                                                    tint = currentTheme.onSurfaceColor
-                                                )
-                                            }
-                                        }
-                                    },
-                                    // 显示顶部时间
-                                    title = {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier
-                                                .padding(vertical = 2.dp)
-                                                .clickable(
-                                                    interactionSource = remember { MutableInteractionSource() },
-                                                    indication = null,
-                                                    onClick = {
-                                                        scope.launch {
-                                                            // 动画滚动到第0项 (最顶部)
-                                                            listState.scrollToItem(0)
-                                                        }
+                                AnimatedContent(
+                                    targetState = viewModel.isBatchManaging,
+                                    label = "TopBarTransition"
+                                ) { isBatch ->
+                                    if (isBatch) {
+                                        // 【新增】：判断是否处于合并模式 (Binding Mode)
+                                        if (viewModel.bindingTargetId != null) {
+                                            CenterAlignedTopAppBar(
+                                                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
+                                                title = {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(12.dp))
+                                                            .clickable { viewModel.executeBinding() } // 点击执行合并
+                                                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "Click me after selecting the entries to combine.",
+                                                            color = currentTheme.primaryColor,
+                                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                                fontWeight = FontWeight.Bold,
+                                                                lineHeight = 18.sp
+                                                            ),
+                                                            textAlign = TextAlign.Center,
+                                                            maxLines = 2 // 防止小屏幕手机文字过长挤爆
+                                                        )
                                                     }
-                                                )
-                                        ) {
-                                            Text(
-                                                text = SimpleDateFormat(
-                                                    "yyyy年MM月dd日 EEEE",
-                                                    Locale.getDefault()
-                                                ).format(currentTime),
-                                                style = MaterialTheme.typography.bodySmall.copy(
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Medium
-                                                ),
-                                                color = currentTheme.onSurfaceColor.copy(
-                                                    alpha = 0.7f
-                                                ),
-                                                modifier = Modifier.padding(top = 2.dp),
-                                                fontFamily = dymonFont
+                                                },
+                                                navigationIcon = {
+                                                    // 左侧提供退出按钮，点击后恢复原状
+                                                    IconButton({ viewModel.stopBatchSelecting() }) {
+                                                        Icon(Icons.Default.Close, contentDescription = "Cancel Binding")
+                                                    }
+                                                }
                                             )
-                                            Text(
-                                                text = SimpleDateFormat(
-                                                    "HH:mm",
-                                                    Locale.getDefault()
-                                                ).format(
-                                                    currentTime
-                                                ),
-                                                style = MaterialTheme.typography.displaySmall.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 24.sp,
-                                                    letterSpacing = 1.sp
-                                                ),
-                                                color = currentTheme.primaryColor, // 时间大字颜色
-                                                fontFamily = dymonFont
+                                        } else {
+                                            // 原本的普通批量管理 TopBar
+                                            CenterAlignedTopAppBar(
+                                                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
+                                                title = { Text("批量操作", style = MaterialTheme.typography.titleMedium) },
+                                                navigationIcon = {
+                                                    IconButton({ viewModel.stopBatchSelecting() }) {
+                                                        Icon(Icons.Default.Close, contentDescription = "Close Batch")
+                                                    }
+                                                }
                                             )
                                         }
+                                    } else {
+                                        NormalTopBar(viewModel, scope, currentTheme, leftDrawerState, listState, currentTime)
                                     }
-                                )
+                                }
                             },
                             floatingActionButton = {
                                 AddFAB(currentTheme, viewModel, isAddFABExpand)
@@ -536,6 +588,13 @@ fun HomeScreen(
                 }
             }
         }
+        if (viewModel.radialMenuEntryId != null) {
+            RadialMenuOverlay(
+                viewModel = viewModel,
+                entryId = viewModel.radialMenuEntryId!!,
+                theme = currentTheme
+            )
+        }
     }
 }
 
@@ -549,14 +608,14 @@ fun TimelineRow(
     // --- 1. 准备时间格式 ---
     val dateObj = Date(group.timestamp)
     val timeStr = remember(group.timestamp) {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(dateObj)
+        TimeFormat.format(dateObj)
     }
     val dateStr = remember(group.timestamp) {
         // 你可以改成 "MM月dd日" 或者 "MM/dd"
-        SimpleDateFormat("MM/dd", Locale.getDefault()).format(dateObj)
+        DateFormat.format(dateObj)
     }
     val yearStr = remember(group.timestamp) {
-        SimpleDateFormat("yyyy", Locale.getDefault()).format(dateObj)
+        YearFormat.format(dateObj)
     }
 
     // 动态计算的颜色
@@ -638,31 +697,21 @@ fun TimelineRow(
                     val current = items[i]
                     val next = items.getOrNull(i + 1)
 
-                    // 判断是否为可以横排的小图片：
-                    // 1. 类型是 IMAGE
-                    // 2. 不是大图 (!isLarge)
-                    // 3. 比例合适 (例如 imageRatio < 1.5f)
-                    val canRow =
-                        current.type == EntryType.IMAGE && !current.isLarge && current.imageRatio < 1.5f
-                    val nextCanRow =
-                        next?.type == EntryType.IMAGE && !next.isLarge && next.imageRatio < 1.5f
-
-                    if (canRow && nextCanRow) {
-                        // 如果连续两个都是小图，用 Row 包裹
+                    if (current.canDisplayInline() && next?.canDisplayInline() == true) {
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier
-                                .animateContentSize( // 当子项换行导致 FlowRow 高度改变时，平滑过渡
-                                    animationSpec = tween(basicAnimLong)
+                            modifier = Modifier.animateContentSize(
+                                animationSpec = tween(
+                                    basicAnimLong
                                 )
+                            )
                         ) {
                             EntryWithButtons(current, viewModel)
                             EntryWithButtons(next, viewModel)
                         }
-                        i += 2 // 跳过两个
+                        i += 2
                     } else {
-                        // 否则按原样单排
                         EntryWithButtons(current, viewModel)
                         i += 1
                     }
@@ -687,12 +736,10 @@ fun EntryWithButtons(entry: DailyEntry, viewModel: DailyViewModel) {
                     .align(Alignment.CenterVertically)
                     .width(animatedButtonSize)
             ) {
-                if (entry.type == EntryType.IMAGE && !viewModel.isBatchManaging) {
-                    Box(
-                        modifier = Modifier
-                            .width(animatedButtonSize)
-                            .aspectRatio(1f)
-                    ) {
+                if (entry.supportPortal() && !viewModel.isBatchManaging) {
+                    Box(modifier = Modifier
+                        .width(animatedButtonSize)
+                        .aspectRatio(1f)) {
                         PortalButton(entry, viewModel)
                     }
                     if (isSelected) Spacer(modifier = Modifier.height(2.dp))
@@ -712,7 +759,7 @@ fun EntryWithButtons(entry: DailyEntry, viewModel: DailyViewModel) {
                         .width(animatedButtonSize)
                         .aspectRatio(1f)
                 ) {
-                    MoveButton(entry, viewModel)
+                    MoreButton(entry, viewModel)
                 }
             }
 
@@ -721,20 +768,19 @@ fun EntryWithButtons(entry: DailyEntry, viewModel: DailyViewModel) {
                     DiaryCard(entry, viewModel)
 
                     // 【修复区域】：加上 if (isSelected) 判断
-                    if (isSelected || viewModel.batchEntries.contains(entry.id)) {
+                    if (viewModel.isBatchManaging && viewModel.batchEntries.contains(entry.id)) {
                         Box(
                             modifier = Modifier
-                                // 改用 padding 将打勾图标放在卡片内部，防止被外层 FlowRow 的 animateContentSize 裁剪
                                 .padding(top = 6.dp, end = 6.dp)
                                 .size(24.dp)
                                 .align(Alignment.TopEnd)
-                                .background(Color.Blue, CircleShape) // 用 CircleShape 更贴合 Icon
+                                .background(Color.Blue, CircleShape)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Check,
+                                Icons.Default.Check,
                                 contentDescription = "selected",
                                 tint = Color.White,
-                                modifier = Modifier.padding(4.dp) // 给 Icon 加一点 padding 以免顶格，视觉更舒适
+                                modifier = Modifier.padding(4.dp)
                             )
                         }
                     }
@@ -792,21 +838,6 @@ fun EntryActionButton(
 }
 
 @Composable
-fun MoveButton(entry: DailyEntry, viewModel: DailyViewModel) {
-    EntryActionButton(
-        entry = entry,
-        viewModel = viewModel,
-        icon = Icons.Filled.SubdirectoryArrowRight,
-        contentDescription = "move entry",
-        offsetYCorrection = -44, // 对应原有的 -44 + DownDp
-        animDuration = basicAnimLong + 100,
-        onClick = {
-            viewModel.showSelectSpaceM = true
-        }
-    )
-}
-
-@Composable
 fun PortalButton(entry: DailyEntry, viewModel: DailyViewModel) {
     EntryActionButton(
         entry = entry,
@@ -832,173 +863,199 @@ fun PinButton(entry: DailyEntry, viewModel: DailyViewModel) {
     )
 }
 
+@Composable
+fun MoreButton(entry: DailyEntry, viewModel: DailyViewModel) {
+    EntryActionButton(
+        entry = entry,
+        viewModel = viewModel,
+        icon = Icons.Default.MoreVert,
+        contentDescription = "more",
+        offsetYCorrection = -44, // 替代之前的 MoveButton 位置
+        animDuration = basicAnimLong + 100,
+        onClick = { viewModel.openRadialMenu(entry.id) } // 唤醒全屏环形菜单
+    )
+}
+
+@Composable
+fun RadialMenuOverlay(
+    viewModel: DailyViewModel,
+    entryId: String,
+    theme: DailyTimeTheme
+) {
+    // 关闭动作
+    val dismiss = { viewModel.closeRadialMenu() }
+
+    // 拦截系统的物理返回键
+    BackHandler(onBack = dismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(100f) // 确保在绝对顶层
+            .background(Color.Black.copy(alpha = 0.5f)) // 背景变暗
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = dismiss // 点击暗处关闭
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        // 毛玻璃中空圆盘背景
+        val radiusDp = 100.dp
+        val radiusPx = with(LocalDensity.current) { radiusDp.toPx() }
+
+        Box(
+            modifier = Modifier
+                .size(radiusDp * 2.5f), // 💡 修复：移除了 .clip(CircleShape)
+            contentAlignment = Alignment.Center
+        ) {
+            // 你也可以在这里加入 Canvas 画圆环描边，强化视觉感受
+            Canvas(modifier = Modifier.matchParentSize()) {
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.15f),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 60f)
+                )
+            }
+
+            // 定义想要放在菜单上的按钮列表
+            val actions = listOf(
+                Triple(Icons.Filled.SubdirectoryArrowRight, "Move") {
+                    dismiss()
+                    viewModel.selectEntry(entryId)
+                    viewModel.showSelectSpaceM = true
+                },
+                // 【新增】：合并绑定按钮
+                Triple(Icons.Filled.Link, "Bind") {
+                    dismiss() // 收起圆盘
+                    viewModel.startBindingMode(entryId) // 进入合并模式
+                },
+                Triple(Icons.Filled.LinkOff, "Unbind") {
+                    dismiss()
+                    viewModel.unbindEntryFromGroup(entryId)
+                }
+            )
+
+            // 利用三角函数，把按钮均匀撒在圆周上
+            val angleStep = (2 * Math.PI) / actions.size.coerceAtLeast(1)
+            val startAngle = -Math.PI / 2
+
+            actions.forEachIndexed { index, action ->
+                val (icon, label, onClick) = action
+                val angle = startAngle + index * angleStep
+
+                val offsetX = (radiusPx * kotlin.math.cos(angle)).toFloat()
+                val offsetY = (radiusPx * kotlin.math.sin(angle)).toFloat()
+
+                IconButton(
+                    onClick = onClick,
+                    modifier = Modifier
+                        .offset(
+                            x = with(LocalDensity.current) { offsetX.toDp() },
+                            y = with(LocalDensity.current) { offsetY.toDp() }
+                        )
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(theme.primaryColor)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = theme.backgroundColor
+                    )
+                }
+            }
+        }
+    }
+}
+
 // DiaryCard: 日记卡片显示文本或图片
 @Composable
 fun DiaryCard(
     entry: DailyEntry,
     viewModel: DailyViewModel
 ) {
-    Log.d("I love my life", "entry's isPin:${entry.isPin}")
-    val cardModifier = Modifier.clip(RoundedCornerShape(16.dp))
     val haptic = LocalHapticFeedback.current
+    val cardModifier = Modifier.clip(RoundedCornerShape(16.dp))
 
-    if (entry.type == EntryType.TEXT) {
-        Box(
-            modifier = cardModifier
-                .widthIn(max = 220.dp) // 保持原有的最大宽度限制
-                .clip(RoundedCornerShape(16.dp)) // 对应原有的 Card 圆角
-                .pointerInput(entry.id) {
-                    awaitEachGesture {
-                        awaitFirstDown()
-                        try {
-                            withTimeout(longClickMs) { // 自定义时长
-                                val up = waitForUpOrCancellation()
-                                if (up != null) {
-                                    up.consume()
-                                    // 单击
-                                    if (viewModel.isBatchManaging) {
-                                        if (viewModel.batchEntries.contains(entry.id)) {
-                                            viewModel.batchEntries.remove(entry.id)
-                                        } else {
-                                            viewModel.batchEntries.add(entry.id)
-                                        }
-                                    } else {
-                                        viewModel.navigateToEditor(entry.id)
-                                    }
-                                }
-                            }
-                        } catch (_: Exception) {
-                            // --- 执行震动 ---
-                            // LongPress 是最标准的“长按”震动效果
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-
-                            // 执行原本的长按逻辑[cite: 1]
-                            if (viewModel.selectedEntryId != entry.id) {
-                                viewModel.selectEntry(entry.id)
-                            } else {
-                                viewModel.unFocusEntry()
-                            }
-
-                            // 消耗后续事件直到抬起
-                            var event: PointerEvent
-                            do {
-                                event = awaitPointerEvent()
-                                event.changes.forEach { it.consume() }
-                            } while (event.changes.any { it.pressed })
-                        }
-                    }
-                }
-        ) {
-            // 1. 底层：专门负责模糊的背景层
-            val textBg =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Color.White.copy(alpha = cardTransparentScale) else Color.White
-            Box(
-                modifier = Modifier
-                    .matchParentSize() // 强制填充与外层 Box 一样的大小
-                    .background(textBg) // 使用半透明白色，效果更接近毛玻璃
-                    .graphicsLayer {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            // 硬件级模糊，仅 Android 12+ 支持
-                            renderEffect = RenderEffect
-                                .createBlurEffect(80f, 80f, Shader.TileMode.MIRROR)
-                                .asComposeRenderEffect()
-                        }
-                    }
-            )
-
-            // 2. 内容层：文字部分
-            Text(
-                text = entry.content,
-                modifier = Modifier.padding(16.dp), // 保持原有的 16.dp 间距
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    lineHeight = 20.sp,
-                    color = getTextColor(false)
-                ),
-                maxLines = 10,
-                overflow = TextOverflow.Ellipsis,
-                fontWeight = FontWeight.Bold
-            )
+    // 未来添加音频视频，只需在这里加 EntryType.AUDIO -> AudioDiaryCard(...)
+    when (entry.type) {
+        EntryType.TEXT -> {
+            TextDiaryCard(entry, viewModel, haptic, cardModifier)
         }
 
-    } else {
-        val file = viewModel.getFullImagePath(entry.content)
-        val imgWidth = if (entry.imageRatio > 1.5f || entry.isLarge) 240.dp else 120.dp
+        EntryType.IMAGE -> {
+            ImageDiaryCard(entry, viewModel, haptic, cardModifier)
+        }
+    }
+}
 
-        Surface(
-            modifier = cardModifier
-                .pointerInput(entry.id) {
-                    awaitEachGesture {
-                        awaitFirstDown()
-
-                        try {
-                            withTimeout(longClickMs) { // 这里控制长按触发的时长
-                                val up = waitForUpOrCancellation()
-                                if (up != null) {
-                                    up.consume()
-                                    // --- 原 onClick 逻辑开始 ---
-                                    // 单击
-                                    if (viewModel.isBatchManaging) {
-                                        if (viewModel.batchEntries.contains(entry.id)) {
-                                            viewModel.batchEntries.remove(entry.id)
-                                        } else {
-                                            viewModel.batchEntries.add(entry.id)
-                                        }
-                                    } else {
-                                        if (viewModel.hasSpace(entry.id)) {
-                                            val spaceT = viewModel.spaces.find { it.entryId == entry.id }
-                                            viewModel.setSDestination(spaceT?.id)
-                                            if (spaceT?.isEncrypted == true) { // 改为判断 isEncrypted
-                                                viewModel.showPasswordCheck = true
-                                            } else {
-                                                viewModel.changeSpace()
-                                            }
-                                        } else {
-                                            viewModel.showImage(entry)
-                                        }
-                                    }
-                                }
-                            }
-                        } catch (_: Exception) {
-                            // 1. 震动反馈
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-
-                            // 2. 执行原 onLongClick 逻辑[cite: 1]
-                            if (viewModel.selectedEntryId != entry.id) {
-                                viewModel.selectEntry(entry.id)
-                            } else {
-                                viewModel.unFocusEntry()
-                            }
-
-                            // 3. 消耗掉剩余事件，直到手指抬起，防止误触点击
-                            var event: PointerEvent
-                            do {
-                                event = awaitPointerEvent()
-                                event.changes.forEach { it.consume() }
-                            } while (event.changes.any { it.pressed })
-                        }
-                    }
-                },
-            shape = RoundedCornerShape(16.dp),
-            shadowElevation = 2.dp,
-            color = Color.White
-        ) {
-            Box(
-                modifier = Modifier
-                    .width(imgWidth)
-                    .aspectRatio(entry.imageRatio)
-                    .clipToBounds() // 必须裁剪超出部分
-            ) {
-                CroppedDisplayImage(
-                    file = file,
-                    // 如果是小卡片(120dp)，但 cropParams 是基于 240dp 保存的，
-                    // 所以这里的 offset 需要除以 2。
-                    // 逻辑：imgWidth / 240.dp
-                    scaleAdjustment = if (imgWidth < 200.dp) 0.5f else 1f,
-                    cropParams = entry.cropParams ?: CropParams() // 默认无裁剪
-                )
+// 抽取后的纯文本组件
+@Composable
+private fun TextDiaryCard(
+    entry: DailyEntry,
+    viewModel: DailyViewModel,
+    haptic: HapticFeedback,
+    modifier: Modifier
+) {
+    Box(
+        modifier = modifier
+            .widthIn(max = 220.dp)
+            .diaryGestures(entry.id, viewModel, haptic) {
+                viewModel.navigateToEditor(entry.id)
             }
-        }
+    ) {
+        GlassmorphismBackground(modifier = Modifier.matchParentSize()) // 引入复用组件
+        Text(
+            text = entry.content,
+            modifier = Modifier.padding(16.dp),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                lineHeight = 20.sp,
+                color = getTextColor(false)
+            ),
+            maxLines = 10,
+            overflow = TextOverflow.Ellipsis,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
 
+// 抽取后的图片组件
+@Composable
+private fun ImageDiaryCard(
+    entry: DailyEntry,
+    viewModel: DailyViewModel,
+    haptic: HapticFeedback,
+    modifier: Modifier
+) {
+    val file = viewModel.getFullImagePath(entry.content)
+    val imgWidth = if (entry.imageRatio > 1.5f || entry.isLarge) 240.dp else 120.dp
+
+    Surface(
+        modifier = modifier
+            .diaryGestures(entry.id, viewModel, haptic) {
+                if (viewModel.hasSpace(entry.id)) {
+                    val spaceT = viewModel.spaces.find { it.entryId == entry.id }
+                    viewModel.setSDestination(spaceT?.id)
+                    if (spaceT?.isEncrypted == true) viewModel.showPasswordCheck =
+                        true else viewModel.changeSpace()
+                } else {
+                    viewModel.showImage(entry)
+                }
+            },
+        shape = RoundedCornerShape(16.dp),
+        shadowElevation = 2.dp,
+        color = Color.White
+    ) {
+        Box(modifier = Modifier
+            .width(imgWidth)
+            .aspectRatio(entry.imageRatio)
+            .clipToBounds()) {
+            CroppedDisplayImage(
+                file = file,
+                scaleAdjustment = if (imgWidth < 200.dp) 0.5f else 1f,
+                cropParams = entry.cropParams ?: CropParams()
+            )
+        }
     }
 }
 
@@ -1267,4 +1324,64 @@ fun AddFAB(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NormalTopBar(
+    viewModel: DailyViewModel,
+    scope: kotlinx.coroutines.CoroutineScope,
+    currentTheme: DailyTimeTheme,
+    leftDrawerState: androidx.compose.material3.DrawerState,
+    listState: LazyListState,
+    currentTime: Date
+) {
+    val spaceColor = viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.colorBgArgb
+    val finalColor =
+        spaceColor?.let { Color(it).copy(alpha = 0.5f) } ?: Color.White.copy(alpha = 0.5f)
+
+    CenterAlignedTopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = finalColor),
+        navigationIcon = {
+            IconButton(onClick = { scope.launch { leftDrawerState.open() } }) {
+                Icon(
+                    Icons.Default.Menu,
+                    contentDescription = "Menu",
+                    tint = currentTheme.onSurfaceColor
+                )
+            }
+        },
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .padding(vertical = 2.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { scope.launch { listState.scrollToItem(0) } }
+                    )
+            ) {
+                Text(
+                    text = FullDateFormat.format(currentTime),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = currentTheme.onSurfaceColor.copy(alpha = 0.7f),
+                    fontFamily = dymonFont
+                )
+                Text(
+                    text = TimeFormat.format(currentTime),
+                    style = MaterialTheme.typography.displaySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        letterSpacing = 1.sp
+                    ),
+                    color = currentTheme.primaryColor,
+                    fontFamily = dymonFont
+                )
+            }
+        }
+    )
 }
