@@ -2,7 +2,6 @@ package com.roroi.taplog.daily
 
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.graphics.RenderEffect
 import android.graphics.Shader
 import android.os.Build
 import android.util.Log
@@ -10,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.EaseOutSine
 import androidx.compose.animation.core.animateDpAsState
@@ -54,7 +54,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.SensorDoor
 import androidx.compose.material.icons.filled.SubdirectoryArrowRight
@@ -105,6 +108,7 @@ import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
@@ -115,6 +119,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.size.Scale
@@ -155,12 +160,16 @@ private val GAP_WIDTH = 24.dp
 private val TOTAL_SIDEBAR_WIDTH = TEXT_AREA_WIDTH + GAP_WIDTH
 private val DOT_SIZE = 12.dp
 private val CARD_TOP_OFFSET = 12.dp
+
 @SuppressLint("ConstantLocale")
 val TimeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+
 @SuppressLint("ConstantLocale")
 val DateFormat = SimpleDateFormat("MM/dd", Locale.getDefault())
+
 @SuppressLint("ConstantLocale")
 val YearFormat = SimpleDateFormat("yyyy", Locale.getDefault())
+
 @SuppressLint("ConstantLocale")
 val FullDateFormat = SimpleDateFormat("yyyy年MM月dd日 EEEE", Locale.getDefault())
 
@@ -178,7 +187,7 @@ fun GlassmorphismBackground(
             .graphicsLayer {
                 if (isAndroidS) {
                     renderEffect = android.graphics.RenderEffect
-                        .createBlurEffect(blurRadius, blurRadius, android.graphics.Shader.TileMode.MIRROR)
+                        .createBlurEffect(blurRadius, blurRadius, Shader.TileMode.MIRROR)
                         .asComposeRenderEffect()
                 }
             }
@@ -248,7 +257,6 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
 
     val hazeState = remember { HazeState() }
-    val isDark = viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.isDark ?: false // 当前空间是否为暗色
 
     // 导入：打开文件
     val importLauncher = rememberLauncherForActivityResult(
@@ -320,7 +328,7 @@ fun HomeScreen(
         ChangePasswordDialog(
             onDismiss = { viewModel.showChangePassword = false },
             onConfirm = { oldPass, newPass ->
-                viewModel.changeSpacePassword(oldPass, newPass)
+                viewModel.changeSpacePassword(newPass)
                 viewModel.showChangePassword = false
             },
             hasOldPassword = currentSpace.isEncrypted // 使用 isEncrypted 状态
@@ -465,82 +473,59 @@ fun HomeScreen(
                         Scaffold(
                             containerColor = Color.Transparent,
                             topBar = {
-                                val spaceColor =
-                                    viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.colorBgArgb
-                                val finalColor = spaceColor?.let {
-                                    Color(it).copy(alpha = 0.5f)
-                                } ?: Color.White.copy(alpha = 0.5f)
-                                CenterAlignedTopAppBar(
-                                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                                        containerColor = finalColor
-                                    ),
-                                    // 打开左侧栏
-                                    navigationIcon = {
-                                        IconButton(onClick = { scope.launch { leftDrawerState.open() } }) {
-                                            Icon(
-                                                Icons.Default.Menu,
-                                                contentDescription = "Menu",
-                                                tint = currentTheme.onSurfaceColor
-                                            )
-                                        }
-                                    },
-                                    actions = {
-                                        if (viewModel.isBatchManaging) {
-                                            IconButton({
-                                                viewModel.stopBatchSelecting()
-                                            }) {
-                                                Icon(
-                                                    Icons.Default.Close,
-                                                    contentDescription = "stop batch-managing",
-                                                    tint = currentTheme.onSurfaceColor
-                                                )
-                                            }
-                                        }
-                                    },
-                                    // 显示顶部时间
-                                    title = {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier
-                                                .padding(vertical = 2.dp)
-                                                .clickable(
-                                                    interactionSource = remember { MutableInteractionSource() },
-                                                    indication = null,
-                                                    onClick = {
-                                                        scope.launch {
-                                                            // 动画滚动到第0项 (最顶部)
-                                                            listState.scrollToItem(0)
-                                                        }
+                                AnimatedContent(
+                                    targetState = viewModel.isBatchManaging,
+                                    label = "TopBarTransition"
+                                ) { isBatch ->
+                                    if (isBatch) {
+                                        // 【新增】：判断是否处于合并模式 (Binding Mode)
+                                        if (viewModel.bindingTargetId != null) {
+                                            CenterAlignedTopAppBar(
+                                                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
+                                                title = {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clip(RoundedCornerShape(12.dp))
+                                                            .clickable { viewModel.executeBinding() } // 点击执行合并
+                                                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "Click me after selecting the entries to combine.",
+                                                            color = currentTheme.primaryColor,
+                                                            style = MaterialTheme.typography.titleSmall.copy(
+                                                                fontWeight = FontWeight.Bold,
+                                                                lineHeight = 18.sp
+                                                            ),
+                                                            textAlign = TextAlign.Center,
+                                                            maxLines = 2 // 防止小屏幕手机文字过长挤爆
+                                                        )
                                                     }
-                                                )
-                                        ) {
-                                            Text(
-                                                text = FullDateFormat.format(currentTime),
-                                                style = MaterialTheme.typography.bodySmall.copy(
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Medium
-                                                ),
-                                                color = currentTheme.onSurfaceColor.copy(
-                                                    alpha = 0.7f
-                                                ),
-                                                modifier = Modifier.padding(top = 2.dp),
-                                                fontFamily = dymonFont
+                                                },
+                                                navigationIcon = {
+                                                    // 左侧提供退出按钮，点击后恢复原状
+                                                    IconButton({ viewModel.stopBatchSelecting() }) {
+                                                        Icon(Icons.Default.Close, contentDescription = "Cancel Binding")
+                                                    }
+                                                }
                                             )
-                                            Text(
-                                                text = TimeFormat.format(
-                                                    currentTime
-                                                ),
-                                                style = MaterialTheme.typography.displaySmall.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 24.sp,
-                                                    letterSpacing = 1.sp
-                                                ),
-                                                color = currentTheme.primaryColor, // 时间大字颜色
-                                                fontFamily = dymonFont
+                                        } else {
+                                            // 原本的普通批量管理 TopBar
+                                            CenterAlignedTopAppBar(
+                                                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
+                                                title = { Text("批量操作", style = MaterialTheme.typography.titleMedium) },
+                                                navigationIcon = {
+                                                    IconButton({ viewModel.stopBatchSelecting() }) {
+                                                        Icon(Icons.Default.Close, contentDescription = "Close Batch")
+                                                    }
+                                                }
                                             )
                                         }
+                                    } else {
+                                        NormalTopBar(viewModel, scope, currentTheme, leftDrawerState, listState, currentTime)
                                     }
-                                )
+                                }
                             },
                             floatingActionButton = {
                                 AddFAB(currentTheme, viewModel, isAddFABExpand)
@@ -602,6 +587,13 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+        if (viewModel.radialMenuEntryId != null) {
+            RadialMenuOverlay(
+                viewModel = viewModel,
+                entryId = viewModel.radialMenuEntryId!!,
+                theme = currentTheme
+            )
         }
     }
 }
@@ -705,20 +697,15 @@ fun TimelineRow(
                     val current = items[i]
                     val next = items.getOrNull(i + 1)
 
-                    // 判断是否为可以横排的小图片：
-                    // 1. 类型是 IMAGE
-                    // 2. 不是大图 (!isLarge)
-                    // 3. 比例合适 (例如 imageRatio < 1.5f)
-                    val canRow =
-                        current.type == EntryType.IMAGE && !current.isLarge && current.imageRatio < 1.5f
-                    val nextCanRow =
-                        next?.type == EntryType.IMAGE && !next.isLarge && next.imageRatio < 1.5f
-
                     if (current.canDisplayInline() && next?.canDisplayInline() == true) {
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.animateContentSize(animationSpec = tween(basicAnimLong))
+                            modifier = Modifier.animateContentSize(
+                                animationSpec = tween(
+                                    basicAnimLong
+                                )
+                            )
                         ) {
                             EntryWithButtons(current, viewModel)
                             EntryWithButtons(next, viewModel)
@@ -750,7 +737,9 @@ fun EntryWithButtons(entry: DailyEntry, viewModel: DailyViewModel) {
                     .width(animatedButtonSize)
             ) {
                 if (entry.supportPortal() && !viewModel.isBatchManaging) {
-                    Box(modifier = Modifier.width(animatedButtonSize).aspectRatio(1f)) {
+                    Box(modifier = Modifier
+                        .width(animatedButtonSize)
+                        .aspectRatio(1f)) {
                         PortalButton(entry, viewModel)
                     }
                     if (isSelected) Spacer(modifier = Modifier.height(2.dp))
@@ -770,7 +759,7 @@ fun EntryWithButtons(entry: DailyEntry, viewModel: DailyViewModel) {
                         .width(animatedButtonSize)
                         .aspectRatio(1f)
                 ) {
-                    MoveButton(entry, viewModel)
+                    MoreButton(entry, viewModel)
                 }
             }
 
@@ -779,20 +768,19 @@ fun EntryWithButtons(entry: DailyEntry, viewModel: DailyViewModel) {
                     DiaryCard(entry, viewModel)
 
                     // 【修复区域】：加上 if (isSelected) 判断
-                    if (isSelected || viewModel.batchEntries.contains(entry.id)) {
+                    if (viewModel.isBatchManaging && viewModel.batchEntries.contains(entry.id)) {
                         Box(
                             modifier = Modifier
-                                // 改用 padding 将打勾图标放在卡片内部，防止被外层 FlowRow 的 animateContentSize 裁剪
                                 .padding(top = 6.dp, end = 6.dp)
                                 .size(24.dp)
                                 .align(Alignment.TopEnd)
-                                .background(Color.Blue, CircleShape) // 用 CircleShape 更贴合 Icon
+                                .background(Color.Blue, CircleShape)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Check,
+                                Icons.Default.Check,
                                 contentDescription = "selected",
                                 tint = Color.White,
-                                modifier = Modifier.padding(4.dp) // 给 Icon 加一点 padding 以免顶格，视觉更舒适
+                                modifier = Modifier.padding(4.dp)
                             )
                         }
                     }
@@ -850,21 +838,6 @@ fun EntryActionButton(
 }
 
 @Composable
-fun MoveButton(entry: DailyEntry, viewModel: DailyViewModel) {
-    EntryActionButton(
-        entry = entry,
-        viewModel = viewModel,
-        icon = Icons.Filled.SubdirectoryArrowRight,
-        contentDescription = "move entry",
-        offsetYCorrection = -44, // 对应原有的 -44 + DownDp
-        animDuration = basicAnimLong + 100,
-        onClick = {
-            viewModel.showSelectSpaceM = true
-        }
-    )
-}
-
-@Composable
 fun PortalButton(entry: DailyEntry, viewModel: DailyViewModel) {
     EntryActionButton(
         entry = entry,
@@ -890,6 +863,111 @@ fun PinButton(entry: DailyEntry, viewModel: DailyViewModel) {
     )
 }
 
+@Composable
+fun MoreButton(entry: DailyEntry, viewModel: DailyViewModel) {
+    EntryActionButton(
+        entry = entry,
+        viewModel = viewModel,
+        icon = Icons.Default.MoreVert,
+        contentDescription = "more",
+        offsetYCorrection = -44, // 替代之前的 MoveButton 位置
+        animDuration = basicAnimLong + 100,
+        onClick = { viewModel.openRadialMenu(entry.id) } // 唤醒全屏环形菜单
+    )
+}
+
+@Composable
+fun RadialMenuOverlay(
+    viewModel: DailyViewModel,
+    entryId: String,
+    theme: DailyTimeTheme
+) {
+    // 关闭动作
+    val dismiss = { viewModel.closeRadialMenu() }
+
+    // 拦截系统的物理返回键
+    BackHandler(onBack = dismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(100f) // 确保在绝对顶层
+            .background(Color.Black.copy(alpha = 0.5f)) // 背景变暗
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = dismiss // 点击暗处关闭
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        // 毛玻璃中空圆盘背景
+        val radiusDp = 100.dp
+        val radiusPx = with(LocalDensity.current) { radiusDp.toPx() }
+
+        Box(
+            modifier = Modifier
+                .size(radiusDp * 2.5f), // 💡 修复：移除了 .clip(CircleShape)
+            contentAlignment = Alignment.Center
+        ) {
+            // 你也可以在这里加入 Canvas 画圆环描边，强化视觉感受
+            Canvas(modifier = Modifier.matchParentSize()) {
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.15f),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 60f)
+                )
+            }
+
+            // 定义想要放在菜单上的按钮列表
+            val actions = listOf(
+                Triple(Icons.Filled.SubdirectoryArrowRight, "Move") {
+                    dismiss()
+                    viewModel.selectEntry(entryId)
+                    viewModel.showSelectSpaceM = true
+                },
+                // 【新增】：合并绑定按钮
+                Triple(Icons.Filled.Link, "Bind") {
+                    dismiss() // 收起圆盘
+                    viewModel.startBindingMode(entryId) // 进入合并模式
+                },
+                Triple(Icons.Filled.LinkOff, "Unbind") {
+                    dismiss()
+                    viewModel.unbindEntryFromGroup(entryId)
+                }
+            )
+
+            // 利用三角函数，把按钮均匀撒在圆周上
+            val angleStep = (2 * Math.PI) / actions.size.coerceAtLeast(1)
+            val startAngle = -Math.PI / 2
+
+            actions.forEachIndexed { index, action ->
+                val (icon, label, onClick) = action
+                val angle = startAngle + index * angleStep
+
+                val offsetX = (radiusPx * kotlin.math.cos(angle)).toFloat()
+                val offsetY = (radiusPx * kotlin.math.sin(angle)).toFloat()
+
+                IconButton(
+                    onClick = onClick,
+                    modifier = Modifier
+                        .offset(
+                            x = with(LocalDensity.current) { offsetX.toDp() },
+                            y = with(LocalDensity.current) { offsetY.toDp() }
+                        )
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(theme.primaryColor)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = theme.backgroundColor
+                    )
+                }
+            }
+        }
+    }
+}
+
 // DiaryCard: 日记卡片显示文本或图片
 @Composable
 fun DiaryCard(
@@ -904,6 +982,7 @@ fun DiaryCard(
         EntryType.TEXT -> {
             TextDiaryCard(entry, viewModel, haptic, cardModifier)
         }
+
         EntryType.IMAGE -> {
             ImageDiaryCard(entry, viewModel, haptic, cardModifier)
         }
@@ -929,7 +1008,10 @@ private fun TextDiaryCard(
         Text(
             text = entry.content,
             modifier = Modifier.padding(16.dp),
-            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp, color = getTextColor(false)),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                lineHeight = 20.sp,
+                color = getTextColor(false)
+            ),
             maxLines = 10,
             overflow = TextOverflow.Ellipsis,
             fontWeight = FontWeight.Bold
@@ -954,7 +1036,8 @@ private fun ImageDiaryCard(
                 if (viewModel.hasSpace(entry.id)) {
                     val spaceT = viewModel.spaces.find { it.entryId == entry.id }
                     viewModel.setSDestination(spaceT?.id)
-                    if (spaceT?.isEncrypted == true) viewModel.showPasswordCheck = true else viewModel.changeSpace()
+                    if (spaceT?.isEncrypted == true) viewModel.showPasswordCheck =
+                        true else viewModel.changeSpace()
                 } else {
                     viewModel.showImage(entry)
                 }
@@ -963,7 +1046,10 @@ private fun ImageDiaryCard(
         shadowElevation = 2.dp,
         color = Color.White
     ) {
-        Box(modifier = Modifier.width(imgWidth).aspectRatio(entry.imageRatio).clipToBounds()) {
+        Box(modifier = Modifier
+            .width(imgWidth)
+            .aspectRatio(entry.imageRatio)
+            .clipToBounds()) {
             CroppedDisplayImage(
                 file = file,
                 scaleAdjustment = if (imgWidth < 200.dp) 0.5f else 1f,
@@ -1238,4 +1324,64 @@ fun AddFAB(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NormalTopBar(
+    viewModel: DailyViewModel,
+    scope: kotlinx.coroutines.CoroutineScope,
+    currentTheme: DailyTimeTheme,
+    leftDrawerState: androidx.compose.material3.DrawerState,
+    listState: LazyListState,
+    currentTime: Date
+) {
+    val spaceColor = viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.colorBgArgb
+    val finalColor =
+        spaceColor?.let { Color(it).copy(alpha = 0.5f) } ?: Color.White.copy(alpha = 0.5f)
+
+    CenterAlignedTopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = finalColor),
+        navigationIcon = {
+            IconButton(onClick = { scope.launch { leftDrawerState.open() } }) {
+                Icon(
+                    Icons.Default.Menu,
+                    contentDescription = "Menu",
+                    tint = currentTheme.onSurfaceColor
+                )
+            }
+        },
+        title = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .padding(vertical = 2.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { scope.launch { listState.scrollToItem(0) } }
+                    )
+            ) {
+                Text(
+                    text = FullDateFormat.format(currentTime),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    color = currentTheme.onSurfaceColor.copy(alpha = 0.7f),
+                    fontFamily = dymonFont
+                )
+                Text(
+                    text = TimeFormat.format(currentTime),
+                    style = MaterialTheme.typography.displaySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        letterSpacing = 1.sp
+                    ),
+                    color = currentTheme.primaryColor,
+                    fontFamily = dymonFont
+                )
+            }
+        }
+    )
 }

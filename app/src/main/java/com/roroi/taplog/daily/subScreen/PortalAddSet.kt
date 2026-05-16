@@ -93,7 +93,6 @@ import com.roroi.taplog.daily.viewmodel.DailyViewModel
 import com.roroi.taplog.score.OptimizedBackground
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.File
 
 @Preview
 @Composable

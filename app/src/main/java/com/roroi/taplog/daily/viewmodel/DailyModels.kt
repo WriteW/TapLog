@@ -24,10 +24,11 @@ data class DailyEntry(
     val content: String,
     val imageRatio: Float = 1f,
     val isLarge: Boolean = false,
-    val cropParams: CropParams? = null, // 【新增】保存裁剪参数
-    val isPin: Boolean = false
+    val cropParams: CropParams? = null,
+    val isPin: Boolean = false,
+    // 【新增】：手动分组ID，拥有相同此ID的条目会被强制绑在一个 TimelineGroup
+    val manualGroupId: String? = null
 )
-
 data class TimelineGroup(
     val timestamp: Long,
     val items: List<DailyEntry>,
