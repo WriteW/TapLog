@@ -112,7 +112,7 @@ class DailyRepository(private val context: Context) {
 
                 // === 【核心迁移逻辑】：旧明文密码转为 XOR 加密文件 ===
                 if (space.password.isNotEmpty() && !space.isEncrypted) {
-                    val targetFolder = getDSpaceDir(space.id)
+                    getDSpaceDir(space.id)
                     // 使用旧密码加密当前明文文件夹
                     com.roroi.taplog.daily.viewmodel.encryption.lockAndExit(
                         context, space.password, space.id
@@ -262,4 +262,20 @@ class DailyRepository(private val context: Context) {
                 }
             }
         }
+
+    suspend fun loadTimeCapsules(dspaceId: String? = null): List<TimeCapsule> = withContext(Dispatchers.IO) {
+        val file = File(getDSpaceDir(dspaceId), "capsules.json")
+        if (!file.exists()) return@withContext emptyList()
+        try {
+            json.decodeFromString(file.readText())
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun saveTimeCapsules(capsules: List<TimeCapsule>, dspaceId: String? = null) = withContext(Dispatchers.IO) {
+        createDirs()
+        val file = File(getDSpaceDir(dspaceId), "capsules.json")
+        file.writeText(json.encodeToString(capsules))
+    }
 }

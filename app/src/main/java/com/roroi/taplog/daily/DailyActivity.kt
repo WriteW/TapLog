@@ -111,6 +111,14 @@ class DailyActivity : ComponentActivity() {
                         val fatherId = backStackEntry.arguments?.getString("id")
                         fatherId?.let { PortalEditor(viewModel = viewModel, it) }
                     }
+
+                    composable("addCapsule") {
+                        com.roroi.taplog.daily.subScreen.capsule.AddTCScreen(viewModel)
+                    }
+
+                    composable("viewCapsules") {
+                        com.roroi.taplog.daily.subScreen.capsule.ViewTCScreen(viewModel)
+                    }
                 }
             }
         }
