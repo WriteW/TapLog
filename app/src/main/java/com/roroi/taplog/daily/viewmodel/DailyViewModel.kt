@@ -38,14 +38,27 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             EditorState(
                 sessionId = System.currentTimeMillis(), // 新增：每次进入分配新 ID
                 entryId = entry.id,
+                originalTitle = entry.title ?: "", // 【新增】
+                editingTitle = entry.title ?: "",  // 【新增】
                 originalText = entry.content,
                 editingText = entry.content,
                 isDirty = false,
-                isNew = false
+                isNew = false,
+                timestamp = entry.timestamp
             )
         } else {
             EditorState(
-                sessionId = System.currentTimeMillis() // 新增：每次新建分配新 ID
+                sessionId = System.currentTimeMillis(), // 新增：每次新建分配新 ID
+                timestamp = System.currentTimeMillis() // 【新增】
+            )
+        }
+    }
+    // 【新增】处理标题变化
+    fun onEditorTitleChange(title: String) {
+        _editorState.update {
+            it.copy(
+                editingTitle = title,
+                isDirty = title != it.originalTitle || it.editingText != it.originalText
             )
         }
     }
@@ -53,23 +66,25 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         _editorState.update {
             it.copy(
                 editingText = text,
-                isDirty = text != it.originalText
+                isDirty = text != it.originalText || it.editingTitle != it.originalTitle
             )
         }
     }
     fun saveEditor(onDone: () -> Unit) {
         val state = _editorState.value
 
-        if (state.editingText.isBlank()) return
+        if (state.editingText.isBlank() && state.editingTitle.isBlank()) return
 
         viewModelScope.launch {
             if (state.isNew) {
-                addTextEntry(state.editingText)
+                addTextEntry(state.editingText, state.editingTitle)
             } else {
                 val entry = getEntryFromId(state.entryId) ?: return@launch
-                updateEntry(entry.copy(content = state.editingText))
+                updateEntry(entry.copy(
+                    content = state.editingText,
+                    title = state.editingTitle.ifBlank { null } // 为空自动置为 null
+                ))
             }
-
             onDone()
         }
     }
@@ -101,11 +116,6 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     }
     var bindingTargetId: String? by mutableStateOf(null)
         private set
-    fun stopBatchSelecting() {
-        isBatchManaging = false
-        batchEntries.clear()
-        bindingTargetId = null // 【新增】：退出批量模式时，自动清理合并目标状态
-    }
     fun startBindingMode(targetId: String) {
         bindingTargetId = targetId
         batchEntries.clear()
@@ -328,6 +338,8 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             }
             showLoadingDialog = false
         }
+
+        viewingCapsuleId = null
     }
 
     fun changeSpace() {
@@ -349,6 +361,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     }
     // 修改退回主空间的逻辑
     fun exitToMainSpace() {
+        viewingCapsuleId = null
         if (selectedDSpaceId != null) {
             viewModelScope.launch {
                 showLoadingDialog = true
@@ -431,16 +444,6 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         selectedEntryId = null
     }
 
-    suspend fun loadData() {
-        val entries = repository.getAllEntries(selectedDSpaceId)
-        val newEntries = entries.sortedWith(
-            compareByDescending<DailyEntry> { it.isPin }
-                .thenByDescending { it.timestamp }
-        )
-        _groupedEntries.value = groupEntries(newEntries)
-
-    }
-
     fun clearMessage() {
         _uiMessage.value = null
     }
@@ -483,12 +486,13 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         return Color.hsl(finalHue, saturation, lightness)
     }
 
-    fun addTextEntry(content: String) {
+    fun addTextEntry(content: String, title: String = "") {
         viewModelScope.launch {
             val entry = DailyEntry(
                 timestamp = System.currentTimeMillis(),
                 type = EntryType.TEXT,
-                content = content
+                content = content,
+                title = title.ifBlank { null }
             )
             repository.saveEntry(entry, selectedDSpaceId)
             loadData()
@@ -661,6 +665,217 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     fun closeRadialMenu() {
         radialMenuEntryId = null
     }
+
+    // ================== 时间胶囊相关状态 ==================
+    var timeCapsules by mutableStateOf<List<TimeCapsule>>(emptyList())
+        private set
+
+    // 记录准备创建的胶囊，挂起等待用户去主页选择 Entry
+    var pendingCapsule: TimeCapsule? by mutableStateOf(null)
+        private set
+
+    // 在 init 或者 loadData 之后加载胶囊
+    private suspend fun loadCapsules() {
+        timeCapsules = repository.loadTimeCapsules(selectedDSpaceId)
+    }
+
+    // 第一步：在 AddTCScreen 填完信息后调用，跳转回主页并进入多选模式
+    fun startCapsuleSelection(name: String, colorArgb: Int, openAt: Long) {
+        pendingCapsule = TimeCapsule(
+            name = name,
+            colorArgb = colorArgb,
+            createdAt = System.currentTimeMillis(),
+            openAt = openAt,
+            entryIds = emptyList()
+        )
+        batchEntries.clear()
+        startBatchSelecting()
+        navigatePop() // 退回主页
+    }
+
+    // 第二步：在主页选中日记后，点击确认封存
+    fun confirmCapsuleCreation() {
+        val capsule = pendingCapsule ?: return
+        if (batchEntries.isEmpty()) {
+            stopBatchSelecting()
+            pendingCapsule = null
+            return
+        }
+
+        viewModelScope.launch {
+            showLoadingDialog = true
+            // 1. 将选中的 entry 打上胶囊烙印
+            val updatedEntries = batchEntries.mapNotNull { id ->
+                getEntryFromId(id)?.copy(capsuleId = capsule.id)
+            }
+            updatedEntries.forEach { repository.saveEntry(it, selectedDSpaceId) }
+
+            // 2. 保存新的胶囊元数据
+            val finalCapsule = capsule.copy(entryIds = batchEntries.toList())
+            val newCapsules = timeCapsules + finalCapsule
+            repository.saveTimeCapsules(newCapsules, selectedDSpaceId)
+            timeCapsules = newCapsules
+
+            // 3. 清理状态并刷新主页
+            pendingCapsule = null
+            stopBatchSelecting()
+            loadData()
+            showLoadingDialog = false
+            toastOut("时间胶囊已封存！🔒")
+        }
+    }
+
+    // 路由跳转
+    fun navigateToViewCapsules() {
+        viewModelScope.launch { navigationEvent.emit(Pair("portal", "viewCapsules")) }
+    }
+    fun navigateToAddCapsule() {
+        viewModelScope.launch { navigationEvent.emit(Pair("portal", "addCapsule")) }
+    }
+
+    // ============== 找到 loadData() 方法修改，隐藏被封存的日记 ==============
+    suspend fun loadData() {
+        loadCapsules()
+        val entries = repository.getAllEntries(selectedDSpaceId)
+
+        // 【核心修改】：通过拦截数据源实现“切换空间”的效果
+        val visibleEntries = if (viewingCapsuleId != null) {
+            // 如果处于胶囊模式，只加载属于这个胶囊的条目
+            entries.filter { it.capsuleId == viewingCapsuleId }
+        } else {
+            // 普通模式，隐藏被封装的条目
+            entries.filter { it.capsuleId == null }
+        }
+
+        val newEntries = visibleEntries.sortedWith(
+            compareByDescending<DailyEntry> { it.isPin }
+                .thenByDescending { it.timestamp }
+        )
+        _groupedEntries.value = groupEntries(newEntries)
+    }
+
+    // ============== 找到 stopBatchSelecting() 添加清理 ==============
+    fun stopBatchSelecting() {
+        isBatchManaging = false
+        batchEntries.clear()
+        bindingTargetId = null
+        pendingCapsule = null // 【新增】
+    }
+
+    // 当前正在沉浸式查看的时间胶囊ID
+    var viewingCapsuleId: String? by mutableStateOf(null)
+        private set
+
+    // 退出胶囊虚拟空间，回到普通主页
+    fun exitCapsuleSpace() {
+        viewingCapsuleId = null
+        viewModelScope.launch {
+            showLoadingDialog = true
+            loadData()
+            showLoadingDialog = false
+        }
+    }
+
+    // 1. 标记胶囊为已读
+    fun markCapsuleAsViewed(capsuleId: String) {
+        viewModelScope.launch {
+            val updatedCapsules = timeCapsules.map {
+                if (it.id == capsuleId) it.copy(isViewed = true) else it
+            }
+            repository.saveTimeCapsules(updatedCapsules, selectedDSpaceId)
+            timeCapsules = updatedCapsules
+        }
+    }
+
+    // 2. 彻底删除胶囊及其内部的所有日记
+    fun deleteCapsule(capsuleId: String) {
+        viewModelScope.launch {
+            val capsule = timeCapsules.find { it.id == capsuleId } ?: return@launch
+
+            // 删除胶囊内的所有条目
+            capsule.entryIds.forEach { entryId ->
+                val entry = getEntryFromId(entryId)
+                if (entry != null) repository.deleteEntry(entry, selectedDSpaceId)
+            }
+
+            // 删除胶囊元数据
+            val updatedCapsules = timeCapsules.filterNot { it.id == capsuleId }
+            repository.saveTimeCapsules(updatedCapsules, selectedDSpaceId)
+            timeCapsules = updatedCapsules
+            toastOut("胶囊已彻底销毁 💥")
+            loadData() // 刷新底层数据
+        }
+    }
+
+    // 3. 修改 openCapsuleSpace，进入时自动标记为已读并关闭侧边栏
+    fun openCapsuleSpace(capsuleId: String) {
+        markCapsuleAsViewed(capsuleId) // 消除红点
+        viewingCapsuleId = capsuleId
+        viewModelScope.launch {
+            showLoadingDialog = true
+            loadData()
+            navigatePop()
+            showLoadingDialog = false
+        }
+    }
+
+    // ================== 搜索与高亮 ==================
+    var searchQuery by mutableStateOf("")
+        private set
+    var searchResults by mutableStateOf<List<DailyEntry>>(emptyList())
+        private set
+    var currentSearchIndex by mutableStateOf(-1)
+        private set
+    var highlightedEntryId by mutableStateOf<String?>(null)
+        private set
+
+    fun updateSearch(query: String) {
+        searchQuery = query
+        if (query.isBlank()) {
+            searchResults = emptyList()
+            currentSearchIndex = -1
+        } else {
+            searchResults = _groupedEntries.value.flatMap { it.items }
+                .filter { it.type == EntryType.TEXT && ((it.content.contains(query, ignoreCase = true)) || (it.title?.contains(query, ignoreCase = true) == true)) }
+            currentSearchIndex = if (searchResults.isNotEmpty()) 0 else -1
+            if (currentSearchIndex >= 0) {
+                highlightEntry(searchResults[currentSearchIndex].id)
+            }
+        }
+    }
+
+    fun stopSearch() {
+        searchQuery = ""
+    }
+
+    fun jumpToNextSearch(listState: androidx.compose.foundation.lazy.LazyListState, scope: kotlinx.coroutines.CoroutineScope) {
+        if (searchResults.isEmpty()) return
+        currentSearchIndex = (currentSearchIndex + 1) % searchResults.size
+        scrollToCurrentSearch(listState, scope)
+    }
+
+    fun jumpToPrevSearch(listState: androidx.compose.foundation.lazy.LazyListState, scope: kotlinx.coroutines.CoroutineScope) {
+        if (searchResults.isEmpty()) return
+        currentSearchIndex = if (currentSearchIndex - 1 < 0) searchResults.size - 1 else currentSearchIndex - 1
+        scrollToCurrentSearch(listState, scope)
+    }
+
+    private fun scrollToCurrentSearch(listState: androidx.compose.foundation.lazy.LazyListState, scope: kotlinx.coroutines.CoroutineScope) {
+        val targetEntry = searchResults[currentSearchIndex]
+        val groupIndex = _groupedEntries.value.indexOfFirst { it.items.any { item -> item.id == targetEntry.id } }
+        if (groupIndex >= 0) {
+            scope.launch { listState.scrollToItem(groupIndex) }
+            highlightEntry(targetEntry.id)
+        }
+    }
+
+    private fun highlightEntry(id: String) {
+        highlightedEntryId = id
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1500)
+            if (highlightedEntryId == id) highlightedEntryId = null // 1.5秒后渐变消失
+        }
+    }
 }
 
 data class TransformData(
@@ -705,9 +920,12 @@ fun calculateTransform(
 data class EditorState(
     val sessionId: Long = 0L, // 新增：用于强制刷新 Compose UI 缓存的唯一标识
     val entryId: String? = null,
+    val originalTitle: String = "", // 【新增】
+    val editingTitle: String = "",  // 【新增】
     val originalText: String = "",
     val editingText: String = "",
     val isDirty: Boolean = false,
-    val isNew: Boolean = true
+    val isNew: Boolean = true,
+    val timestamp: Long = System.currentTimeMillis()
 )
 

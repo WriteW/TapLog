@@ -21,14 +21,28 @@ data class DailyEntry(
     val id: String = UUID.randomUUID().toString(),
     val timestamp: Long,
     val type: EntryType,
+    val title: String? = null,
     val content: String,
     val imageRatio: Float = 1f,
     val isLarge: Boolean = false,
     val cropParams: CropParams? = null,
     val isPin: Boolean = false,
     // 【新增】：手动分组ID，拥有相同此ID的条目会被强制绑在一个 TimelineGroup
-    val manualGroupId: String? = null
+    val manualGroupId: String? = null,
+    val capsuleId: String? = null
 )
+
+@Serializable
+data class TimeCapsule(
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
+    val colorArgb: Int,
+    val createdAt: Long,
+    val openAt: Long,
+    val entryIds: List<String>,
+    val isViewed: Boolean = false
+)
+
 data class TimelineGroup(
     val timestamp: Long,
     val items: List<DailyEntry>,

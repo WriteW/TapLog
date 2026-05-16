@@ -22,10 +22,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.Input
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -84,6 +87,10 @@ import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.Date
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 
 data class NavModuleItem(
     val name: String,
@@ -96,6 +103,77 @@ val otherAppModules = listOf(
     NavModuleItem("Stream", com.roroi.taplog.stream.MainActivity::class.java),
     NavModuleItem("Score", Score::class.java) // 假设你的 Score 叫这个名字，按需修改
 )
+
+@Composable
+fun TimeCapsuleItem(viewModel: DailyViewModel?, onCloseSidebar: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val theme = viewModel?.getThemeBySpace() ?: DailyTimeTheme.getCurrent()
+    val hasUnlocked =
+        viewModel?.timeCapsules?.any { it.openAt <= System.currentTimeMillis() && !it.isViewed } == true
+
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(start = 28.dp, end = 24.dp, bottom = 12.dp, top = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Time Capsule", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (hasUnlocked && !expanded) { // 主标题红点
+                Box(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(Color.Red)
+                )
+            }
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = null,
+                tint = theme.onSurfaceColor
+            )
+        }
+
+        androidx.compose.animation.AnimatedVisibility(visible = expanded) {
+            Column {
+                NavigationDrawerItem(
+                    label = { Text("Add", color = theme.onSurfaceColor) },
+                    onClick = {
+                        onCloseSidebar()
+                        viewModel?.navigateToAddCapsule()
+                    },
+                    icon = { Icon(Icons.Default.Add, null) },
+                    selected = false, modifier = Modifier.padding(horizontal = 12.dp)
+                )
+                NavigationDrawerItem(
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("View", color = theme.onSurfaceColor)
+                            if (hasUnlocked) { // 展开后 View 上的红点
+                                Spacer(Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Red)
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        onCloseSidebar()
+                        viewModel?.navigateToViewCapsules()
+                    },
+                    icon = { Icon(Icons.AutoMirrored.Filled.ViewList, null) },
+                    selected = false, modifier = Modifier.padding(horizontal = 12.dp)
+                )
+            }
+        }
+    }
+}
+
 // ============== 修改：带展开功能的 Danger Zone ==============
 @Composable
 fun LeftSidebarDangerZone(viewModel: DailyViewModel?, onClear: () -> Unit) {
@@ -134,7 +212,11 @@ fun LeftSidebarDangerZone(viewModel: DailyViewModel?, onClear: () -> Unit) {
                 selected = false,
                 onClick = onClear,
                 icon = {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = theme.onSurfaceColor)
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = theme.onSurfaceColor
+                    )
                 },
                 modifier = Modifier.padding(horizontal = 12.dp) // 让子项往里缩一点更好看
             )
@@ -186,7 +268,11 @@ fun LeftSidebarOthers(theme: DailyTimeTheme) {
                         },
                         icon = {
                             // 使用统一的退出小图标
-                            Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = theme.onSurfaceColor)
+                            Icon(
+                                Icons.AutoMirrored.Filled.ExitToApp,
+                                contentDescription = null,
+                                tint = theme.onSurfaceColor
+                            )
                         },
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
@@ -195,11 +281,12 @@ fun LeftSidebarOthers(theme: DailyTimeTheme) {
         }
     }
 }
+
 // 左侧栏预览
 @Preview
 @Composable
 fun LSPre() {
-    LeftSidebarContent(DailyTimeTheme.AFTERNOON, null, {}, {}, {}, null)
+    LeftSidebarContent(DailyTimeTheme.AFTERNOON, null, {}, {}, {}, {}, null)
 }
 
 // 左侧边栏的分裂
@@ -211,6 +298,7 @@ fun LeftSidebarContent(
     onExport: () -> Unit,
     onImport: () -> Unit,
     onClear: () -> Unit,
+    onCloseSidebar: () -> Unit,
     viewModel: DailyViewModel?
 ) {
     var clearConfirmCount by remember { mutableIntStateOf(0) }
@@ -243,6 +331,9 @@ fun LeftSidebarContent(
             HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp, horizontal = 28.dp))
         }
 
+        // 时间胶囊
+        TimeCapsuleItem(viewModel = viewModel, onCloseSidebar = onCloseSidebar)
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 28.dp))
         // 挂载 Others 栏
         LeftSidebarOthers(theme = theme)
         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 28.dp))
@@ -382,6 +473,41 @@ fun LeftSidebarActions(viewModel: DailyViewModel?, onExport: () -> Unit, onImpor
             )
         }
     )
+    if (viewModel != null) {
+        val theme = viewModel.getThemeBySpace()
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(theme.onSurfaceColor.copy(alpha = 0.05f))
+                .padding(12.dp)
+        ) {
+            Icon(
+                Icons.Default.Search,
+                contentDescription = "Search",
+                tint = theme.onSurfaceColor.copy(alpha = 0.6f)
+            )
+            BasicTextField(
+                value = viewModel.searchQuery,
+                onValueChange = { viewModel.updateSearch(it) },
+                singleLine = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
+                textStyle = TextStyle(color = theme.onSurfaceColor, fontSize = 16.sp)
+            )
+            if (viewModel.searchQuery.isNotEmpty()) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Clear",
+                    tint = theme.onSurfaceColor.copy(alpha = 0.6f),
+                    modifier = Modifier.clickable { viewModel.updateSearch("") }
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -394,6 +520,15 @@ fun RightSidebarContent(
     onJumpToGroup: (Int) -> Unit
 ) {
     val groups by viewModel.groupedEntries.collectAsState()
+    val startIndices = remember(groups) {
+        val list = mutableListOf<Int>()
+        var acc = 0
+        for (g in groups) {
+            list.add(acc)
+            acc += g.items.size
+        }
+        list
+    }
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         ModalDrawerSheet(
             drawerShape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp),
@@ -439,15 +574,14 @@ fun RightSidebarContent(
                 contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 40.dp),
                 state = listState
             ) {
-                var isPSECount = 0
                 itemsIndexed(groups) { index, group ->
-                    val isPreSizeEven = groups.first() != group && groups[index - 1].items.size % 2 == 0
-                    if (isPreSizeEven) isPSECount += 1
-
-                    Log.d("the dog is a lie", "index: $index ;isPreSizeEven: ${groups.first() != group && groups[index - 1].items.size % 2 == 0}")
+                    Log.d(
+                        "the dog is a lie",
+                        "index: $index ;isPreSizeEven: ${groups.first() != group && groups[index - 1].items.size % 2 == 0}"
+                    )
                     RightSidebarGroupItem(
+                        startIndex = startIndices[index],
                         index = index, // 传入索引
-                        isReverseSide = isPSECount % 2 != 0, // 如果为奇数
                         group = group,
                         viewModel = viewModel,
                         theme = theme,
@@ -461,8 +595,8 @@ fun RightSidebarContent(
 
 @Composable
 fun RightSidebarGroupItem(
+    startIndex: Int,
     index: Int,
-    isReverseSide: Boolean,// 上一个entries的size是否为偶数，如果是则反转初始isRight
     group: TimelineGroup,
     viewModel: DailyViewModel,
     theme: DailyTimeTheme,
@@ -477,55 +611,41 @@ fun RightSidebarGroupItem(
 
     // 偶数行(0,2,4) -> 内容在右，时间在左
     // 奇数行(1,3,5) -> 内容在左，时间在右
-    val isFirstEntryRight = (index % 2 == 0) xor isReverseSide
+    val isFirstEntryRight = startIndex % 2 == 0
 
-    Column(modifier = Modifier.fillMaxWidth().drawBehind {
-        // 画贯穿整个组的中轴线
-        drawLine(
-            color = Color(0xFFE0E0E0),
-            start = androidx.compose.ui.geometry.Offset(size.width / 2f, 0f),
-            end = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height),
-            strokeWidth = 2.dp.toPx()
-        )
-    }) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .drawBehind {
+                drawLine(
+                    color = Color(0xFFE0E0E0),
+                    start = androidx.compose.ui.geometry.Offset(size.width / 2f, 0f),
+                    end = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }) {
 
-        // --- 第一行：根据 isFirstEntryRight 决定布局 ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
-        ) {
-            // [左侧区域]
+        // --- 首行排版 ---
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             if (isFirstEntryRight) {
-                // A情况：时间在左 (靠右对齐，贴近中线)
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(end = 12.dp), contentAlignment = Alignment.TopEnd
+                        .padding(end = 12.dp),
+                    contentAlignment = Alignment.TopEnd
                 ) {
-                    TimeLineTime(
-                        time = timeStr,
-                        date = dateStr,
-                        theme = theme,
-                        alignment = Alignment.End,
-                        onClick = onTimeClick
-                    )
+                    TimeLineTime(timeStr, dateStr, theme, Alignment.End, onTimeClick)
                 }
             } else {
-                // B情况：内容在左 (靠右对齐，贴近中线)
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .background(Color.Transparent)
-                        .padding(end = 12.dp), contentAlignment = Alignment.TopEnd
+                        .padding(end = 12.dp),
+                    contentAlignment = Alignment.TopEnd
                 ) {
-                    if (entries.isNotEmpty()) CompactDiaryCard(
-                        entries[0],
-                        viewModel
-                    )
+                    if (entries.isNotEmpty()) CompactDiaryCard(entries[0], viewModel)
                 }
             }
-
-            // [中间圆点]
             Box(
                 modifier = Modifier
                     .width(16.dp)
@@ -534,86 +654,61 @@ fun RightSidebarGroupItem(
             ) {
                 Canvas(modifier = Modifier.size(10.dp)) {
                     drawCircle(
-                        color = group.getDotColor(),
-                        radius = size.minDimension / 2 + 2.dp.toPx()
-                    )
-                    drawCircle(color = dotColor, radius = size.minDimension / 2)
+                        group.getDotColor(),
+                        size.minDimension / 2 + 2.dp.toPx()
+                    ); drawCircle(dotColor, size.minDimension / 2)
                 }
             }
-
-            // [右侧区域]
             if (isFirstEntryRight) {
-                // A情况：内容在右 (靠左对齐，贴近中线)
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(start = 12.dp), contentAlignment = Alignment.TopStart
+                        .padding(start = 12.dp),
+                    contentAlignment = Alignment.TopStart
                 ) {
-                    if (entries.isNotEmpty()) CompactDiaryCard(
-                        entries[0],
-                        viewModel
-                    )
+                    if (entries.isNotEmpty()) CompactDiaryCard(entries[0], viewModel)
                 }
             } else {
-                // B情况：时间在右 (靠左对齐，贴近中线)
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(start = 12.dp), contentAlignment = Alignment.TopStart
+                        .padding(start = 12.dp),
+                    contentAlignment = Alignment.TopStart
                 ) {
-                    TimeLineTime(
-                        time = timeStr,
-                        date = dateStr,
-                        theme = theme,
-                        alignment = Alignment.Start,
-                        onClick = onTimeClick
-                    )
+                    TimeLineTime(timeStr, dateStr, theme, Alignment.Start, onTimeClick)
                 }
             }
         }
 
-        // --- 组内后续内容：交错排列 ---
+        // --- 组内后续元素排版 ---
         if (entries.size > 1) {
             Spacer(modifier = Modifier.height(12.dp))
-
             entries.drop(1).forEachIndexed { subIndex, entry ->
-                // 计算逻辑：
-                // 如果首条在右 (isFirstEntryRight=true)，则次条(subIndex=0)应该在左
-                // 如果首条在左 (isFirstEntryRight=false)，则次条(subIndex=0)应该在右
-                val isCurrentSubItemLeft = if (isFirstEntryRight) {
-                    subIndex % 2 == 0 // true -> Left
-                } else {
-                    subIndex % 2 != 0 // false -> Right (Corrected logic)
-                }
+                // 计算当前这条在整个大盘里的绝对索引，偶数放右边，奇数放左边
+                val currentFlatIndex = startIndex + subIndex + 1
+                val isCurrentSubItemRight = currentFlatIndex % 2 == 0
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp)
-                ) {
-                    if (isCurrentSubItemLeft) {
-                        // 内容在左
+                Row(modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)) {
+                    if (!isCurrentSubItemRight) {
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(end = 12.dp), contentAlignment = Alignment.CenterEnd
-                        ) {
-                            CompactDiaryCard(entry, viewModel)
-                        }
-                        Spacer(modifier = Modifier.width(16.dp)) // 中轴占位
-                        Spacer(modifier = Modifier.weight(1f))     // 右侧留白
+                                .padding(end = 12.dp),
+                            contentAlignment = Alignment.CenterEnd
+                        ) { CompactDiaryCard(entry, viewModel) }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Spacer(modifier = Modifier.weight(1f))
                     } else {
-                        // 内容在右
-                        Spacer(modifier = Modifier.weight(1f))     // 左侧留白
-                        Spacer(modifier = Modifier.width(16.dp)) // 中轴占位
+                        Spacer(modifier = Modifier.weight(1f))
+                        Spacer(modifier = Modifier.width(16.dp))
                         Box(
                             modifier = Modifier
                                 .weight(1f)
                                 .padding(start = 12.dp),
                             contentAlignment = Alignment.CenterStart
-                        ) {
-                            CompactDiaryCard(entry, viewModel)
-                        }
+                        ) { CompactDiaryCard(entry, viewModel) }
                     }
                 }
             }
@@ -684,16 +779,28 @@ private fun CompactTextCard(entry: DailyEntry, viewModel: DailyViewModel) {
             .clip(RoundedCornerShape(12.dp))
             .clickable { viewModel.navigateToEditor(entry.id) }
     ) {
-        com.roroi.taplog.daily.GlassmorphismBackground(modifier = Modifier.matchParentSize()) // 引入复用组件
-        Text(
-            text = entry.content,
-            modifier = Modifier.padding(12.dp),
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-            maxLines = 4,
-            overflow = TextOverflow.Ellipsis,
-            color = getTextColor(false),
-            fontWeight = FontWeight.Bold
-        )
+        com.roroi.taplog.daily.GlassmorphismBackground(modifier = Modifier.matchParentSize())
+        Column(modifier = Modifier.padding(12.dp)) {
+            // 标题渲染
+            if (!entry.title.isNullOrBlank()) {
+                Text(
+                    text = entry.title,
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = getTextColor(false),
+                    modifier = Modifier.padding(bottom = 2.dp)
+                )
+            }
+            Text(
+                text = entry.content,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                maxLines = if (!entry.title.isNullOrBlank()) 3 else 4,
+                overflow = TextOverflow.Ellipsis,
+                color = getTextColor(false).copy(alpha = if (entry.title.isNullOrBlank()) 1f else 0.8f),
+                fontWeight = if (entry.title.isNullOrBlank()) FontWeight.Bold else FontWeight.Normal
+            )
+        }
     }
 }
 
@@ -706,7 +813,12 @@ private fun CompactImageCard(entry: DailyEntry, viewModel: DailyViewModel) {
         color = Color.White,
         modifier = Modifier.clickable { viewModel.showImage(entry) }
     ) {
-        Box(modifier = Modifier.width(100.dp).aspectRatio(entry.imageRatio).clipToBounds()) {
+        Box(
+            modifier = Modifier
+                .width(100.dp)
+                .aspectRatio(entry.imageRatio)
+                .clipToBounds()
+        ) {
             CroppedDisplayImage(
                 file = file,
                 scaleAdjustment = 0.5f,

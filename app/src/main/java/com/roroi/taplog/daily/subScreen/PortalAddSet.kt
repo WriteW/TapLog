@@ -224,7 +224,7 @@ fun SelectSpace(
                 Spacer(modifier = Modifier.weight(1f))
 
                 // 选择颜色
-                ThemeEditorCircle(null, modifier = Modifier.zIndex(1f)) { newTheme ->
+                ThemeEditorCircle(space = null, modifier = Modifier.zIndex(1f)) { newTheme ->
                     currentTheme = newTheme
                 }
                 // 名字
@@ -310,12 +310,14 @@ val buttonWidth = 108.dp
 
 @Composable
 fun ThemeEditorCircle(
+    defaultThemePreset: ThemePreset? = null,
     space: DSpace?,
     height: Dp = 0.dp,
     @SuppressLint("ModifierParameter") modifier: Modifier = Modifier,
     onChangeColorPair: (ThemePreset) -> Unit
 ) {
     var boxTheme by remember { mutableStateOf(targetColorList.random()) }
+    defaultThemePreset?.let { boxTheme = it }
 
     // 区分“弹窗是否挂载”和“是否处于展开动画状态”
     var showPopup by remember { mutableStateOf(false) }

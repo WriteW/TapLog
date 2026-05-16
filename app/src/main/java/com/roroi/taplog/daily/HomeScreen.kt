@@ -10,13 +10,17 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.EaseOutBack
 import androidx.compose.animation.core.EaseOutSine
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -49,11 +53,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Menu
@@ -93,9 +101,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -107,10 +117,12 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -148,6 +160,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 
 // --- 布局常量配置 ---
 // 左侧：时间文字区域的宽度 (控制时间离左屏幕的距离 + 文字活动空间)
@@ -172,6 +187,9 @@ val YearFormat = SimpleDateFormat("yyyy", Locale.getDefault())
 
 @SuppressLint("ConstantLocale")
 val FullDateFormat = SimpleDateFormat("yyyy年MM月dd日 EEEE", Locale.getDefault())
+
+@SuppressLint("ConstantLocale")
+val HalfFullDateFormat = SimpleDateFormat("MM月dd日 EEEE", Locale.getDefault())
 
 @Composable
 fun GlassmorphismBackground(
@@ -373,7 +391,8 @@ fun HomeScreen(
                     viewModel.clearAllData()
                     scope.launch { leftDrawerState.close() }
                 },
-                viewModel
+                onCloseSidebar = { scope.launch { leftDrawerState.close() } },
+                viewModel = viewModel
             )
         }
     ) {
@@ -451,7 +470,9 @@ fun HomeScreen(
                         DailyDynamicBackground(theme = currentTheme)
                         // 处理返回键退出空间
                         BackHandler(enabled = true) {
-                            if (leftDrawerState.isOpen) {
+                            if (viewModel.viewingCapsuleId != null) {
+                                viewModel.exitCapsuleSpace() // 退出胶囊虚拟空间
+                            } else if (leftDrawerState.isOpen) {
                                 scope.launch { leftDrawerState.close() }
                             } else if (rightDrawerState.isOpen) {
                                 scope.launch { rightDrawerState.close() }
@@ -473,62 +494,213 @@ fun HomeScreen(
                         Scaffold(
                             containerColor = Color.Transparent,
                             topBar = {
+                                val spaceColor =
+                                    viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.colorBgArgb
+                                val finalColor =
+                                    spaceColor?.let { Color(it).copy(alpha = 0.5f) }
+                                        ?: Color.White.copy(alpha = 0.5f)
                                 AnimatedContent(
-                                    targetState = viewModel.isBatchManaging,
-                                    label = "TopBarTransition"
-                                ) { isBatch ->
-                                    if (isBatch) {
-                                        // 【新增】：判断是否处于合并模式 (Binding Mode)
-                                        if (viewModel.bindingTargetId != null) {
-                                            CenterAlignedTopAppBar(
-                                                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
-                                                title = {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .clip(RoundedCornerShape(12.dp))
-                                                            .clickable { viewModel.executeBinding() } // 点击执行合并
-                                                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text(
-                                                            text = "Click me after selecting the entries to combine.",
-                                                            color = currentTheme.primaryColor,
-                                                            style = MaterialTheme.typography.titleSmall.copy(
-                                                                fontWeight = FontWeight.Bold,
-                                                                lineHeight = 18.sp
-                                                            ),
-                                                            textAlign = TextAlign.Center,
-                                                            maxLines = 2 // 防止小屏幕手机文字过长挤爆
-                                                        )
-                                                    }
-                                                },
-                                                navigationIcon = {
-                                                    // 左侧提供退出按钮，点击后恢复原状
-                                                    IconButton({ viewModel.stopBatchSelecting() }) {
-                                                        Icon(Icons.Default.Close, contentDescription = "Cancel Binding")
-                                                    }
+                                    targetState = viewModel.viewingCapsuleId != null,
+                                    label = "CapsuleSpaceTransition"
+                                ) { inCapsule ->
+                                    if (inCapsule) {
+                                        val capsule =
+                                            viewModel.timeCapsules.find { it.id == viewModel.viewingCapsuleId }
+                                        val creationDate =
+                                            capsule?.createdAt?.let { Date(it) } ?: currentTime
+                                        // 胶囊空间专属 TopBar
+                                        CenterAlignedTopAppBar(
+                                            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                                containerColor = finalColor
+                                            ),
+                                            title = {
+                                                Column(
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    modifier = Modifier.padding(vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "From: ${
+                                                            FullDateFormat.format(
+                                                                creationDate
+                                                            )
+                                                        }",
+                                                        style = MaterialTheme.typography.bodySmall.copy(
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Medium
+                                                        ),
+                                                        color = currentTheme.onSurfaceColor.copy(
+                                                            alpha = 0.7f
+                                                        ),
+                                                        fontFamily = dymonFont
+                                                    )
+                                                    Text(
+                                                        text = TimeFormat.format(
+                                                            creationDate
+                                                        ),
+                                                        style = MaterialTheme.typography.displaySmall.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 24.sp,
+                                                            letterSpacing = 1.sp
+                                                        ),
+                                                        color = currentTheme.primaryColor,
+                                                        fontFamily = dymonFont
+                                                    )
                                                 }
-                                            )
-                                        } else {
-                                            // 原本的普通批量管理 TopBar
-                                            CenterAlignedTopAppBar(
-                                                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
-                                                title = { Text("批量操作", style = MaterialTheme.typography.titleMedium) },
-                                                navigationIcon = {
-                                                    IconButton({ viewModel.stopBatchSelecting() }) {
-                                                        Icon(Icons.Default.Close, contentDescription = "Close Batch")
-                                                    }
+                                            },
+                                            navigationIcon = {
+                                                IconButton({ viewModel.exitCapsuleSpace() }) {
+                                                    Icon(
+                                                        Icons.AutoMirrored.Filled.ArrowBack,
+                                                        contentDescription = "Exit Capsule"
+                                                    )
                                                 }
-                                            )
-                                        }
+                                            }
+                                        )
                                     } else {
-                                        NormalTopBar(viewModel, scope, currentTheme, leftDrawerState, listState, currentTime)
+                                        AnimatedContent(
+                                            targetState = viewModel.isBatchManaging,
+                                            label = "TopBarTransition"
+                                        ) { isBatch ->
+                                            if (isBatch) {
+                                                // 【新增】：封存胶囊模式
+                                                if (viewModel.pendingCapsule != null) {
+                                                    CenterAlignedTopAppBar(
+                                                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                                            containerColor = finalColor
+                                                        ),
+                                                        title = {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .clip(RoundedCornerShape(12.dp))
+                                                                    .clickable { viewModel.confirmCapsuleCreation() }
+                                                                    .padding(8.dp),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Text(
+                                                                    text = "Confirm ${viewModel.batchEntries.size} entries into Capsule",
+                                                                    color = currentTheme.primaryColor,
+                                                                    style = MaterialTheme.typography.titleSmall.copy(
+                                                                        fontWeight = FontWeight.Bold
+                                                                    )
+                                                                )
+                                                            }
+                                                        },
+                                                        navigationIcon = {
+                                                            IconButton({ viewModel.stopBatchSelecting() }) {
+                                                                Icon(
+                                                                    Icons.Default.Close,
+                                                                    null
+                                                                )
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                                // 【新增】：判断是否处于合并模式 (Binding Mode)
+                                                else if (viewModel.bindingTargetId != null) {
+                                                    CenterAlignedTopAppBar(
+                                                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                                            containerColor = finalColor
+                                                        ),
+                                                        title = {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .clip(RoundedCornerShape(12.dp))
+                                                                    .clickable { viewModel.executeBinding() } // 点击执行合并
+                                                                    .padding(
+                                                                        horizontal = 8.dp,
+                                                                        vertical = 8.dp
+                                                                    ),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Text(
+                                                                    text = "Click me after selecting the entries to combine.",
+                                                                    color = currentTheme.primaryColor,
+                                                                    style = MaterialTheme.typography.titleSmall.copy(
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        lineHeight = 18.sp
+                                                                    ),
+                                                                    textAlign = TextAlign.Center,
+                                                                    maxLines = 2 // 防止小屏幕手机文字过长挤爆
+                                                                )
+                                                            }
+                                                        },
+                                                        navigationIcon = {
+                                                            // 左侧提供退出按钮，点击后恢复原状
+                                                            IconButton({ viewModel.stopBatchSelecting() }) {
+                                                                Icon(
+                                                                    Icons.Default.Close,
+                                                                    contentDescription = "Cancel Binding"
+                                                                )
+                                                            }
+                                                        }
+                                                    )
+                                                } else {
+                                                    // 原本的普通批量管理 TopBar
+                                                    CenterAlignedTopAppBar(
+                                                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                                            containerColor = Color.Transparent
+                                                        ),
+                                                        title = {
+                                                            Text(
+                                                                "批量操作",
+                                                                style = MaterialTheme.typography.titleMedium
+                                                            )
+                                                        },
+                                                        navigationIcon = {
+                                                            IconButton({ viewModel.stopBatchSelecting() }) {
+                                                                Icon(
+                                                                    Icons.Default.Close,
+                                                                    "Close Batch"
+                                                                )
+                                                            }
+                                                        },
+                                                        actions = {
+                                                            val clipboardManager =
+                                                                LocalClipboardManager.current
+                                                            IconButton(onClick = {
+                                                                val copiedText =
+                                                                    viewModel.batchEntries.mapNotNull {
+                                                                        viewModel.getEntryFromId(it)
+                                                                    }.joinToString("\n===\n") {
+                                                                            "${
+                                                                                FullDateFormat.format(
+                                                                                    Date(it.timestamp)
+                                                                                )
+                                                                            }\n" + (if (it.title.isNullOrBlank()) "" else "【${it.title}】\n") + it.content
+                                                                        }
+                                                                clipboardManager.setText(
+                                                                    AnnotatedString(copiedText)
+                                                                )
+                                                                viewModel.toastOut("已复制选中的 ${viewModel.batchEntries.size} 条记录")
+                                                                viewModel.stopBatchSelecting()
+                                                            }) {
+                                                                Icon(
+                                                                    Icons.Default.ContentCopy,
+                                                                    "Copy"
+                                                                )
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            } else {
+                                                NormalTopBar(
+                                                    viewModel,
+                                                    scope,
+                                                    currentTheme,
+                                                    leftDrawerState,
+                                                    listState,
+                                                    currentTime
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             },
                             floatingActionButton = {
-                                AddFAB(currentTheme, viewModel, isAddFABExpand)
+                                if (viewModel.viewingCapsuleId == null) {
+                                    AddFAB(currentTheme, viewModel, isAddFABExpand)
+                                }
                             }
                         ) { padding ->
                             Box(
@@ -737,9 +909,11 @@ fun EntryWithButtons(entry: DailyEntry, viewModel: DailyViewModel) {
                     .width(animatedButtonSize)
             ) {
                 if (entry.supportPortal() && !viewModel.isBatchManaging) {
-                    Box(modifier = Modifier
-                        .width(animatedButtonSize)
-                        .aspectRatio(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .width(animatedButtonSize)
+                            .aspectRatio(1f)
+                    ) {
                         PortalButton(entry, viewModel)
                     }
                     if (isSelected) Spacer(modifier = Modifier.height(2.dp))
@@ -764,7 +938,19 @@ fun EntryWithButtons(entry: DailyEntry, viewModel: DailyViewModel) {
             }
 
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                Box {
+                val isHighlighted = viewModel.highlightedEntryId == entry.id
+                val transition = updateTransition(targetState = isHighlighted, label = "highlight")
+                val borderColor by transition.animateColor(
+                    transitionSpec = { if (targetState) tween(200) else tween(1200) },
+                    label = "color"
+                ) { state -> if (state) viewModel.getThemeBySpace().primaryColor else Color.Transparent }
+                Box(
+                    modifier = Modifier.border(
+                        if (isHighlighted) 3.dp else 0.dp,
+                        borderColor,
+                        RoundedCornerShape(16.dp)
+                    )
+                ) {
                     DiaryCard(entry, viewModel)
 
                     // 【修复区域】：加上 if (isSelected) 判断
@@ -877,39 +1063,44 @@ fun MoreButton(entry: DailyEntry, viewModel: DailyViewModel) {
 }
 
 @Composable
-fun RadialMenuOverlay(
-    viewModel: DailyViewModel,
-    entryId: String,
-    theme: DailyTimeTheme
-) {
-    // 关闭动作
-    val dismiss = { viewModel.closeRadialMenu() }
+fun RadialMenuOverlay(viewModel: DailyViewModel, entryId: String, theme: DailyTimeTheme) {
+    // 【修复】：初始状态设为false，并通过 LaunchedEffect 触发使其变为 true，从而产生进场动画
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        isVisible = true
+    }
 
-    // 拦截系统的物理返回键
+    val scope = rememberCoroutineScope()
+
+    // 动画控制
+    val scale by animateFloatAsState(targetValue = if (isVisible) 1f else 0.5f, animationSpec = tween(300, easing = EaseOutBack), label = "scale")
+    val alpha by animateFloatAsState(targetValue = if (isVisible) 1f else 0f, animationSpec = tween(250), label = "alpha")
+
+    val dismiss = {
+        isVisible = false
+        scope.launch { delay(250); viewModel.closeRadialMenu() } // 等待动画退场后销毁
+        Unit
+    }
     BackHandler(onBack = dismiss)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(100f) // 确保在绝对顶层
-            .background(Color.Black.copy(alpha = 0.5f)) // 背景变暗
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = dismiss // 点击暗处关闭
-            ),
+            .zIndex(100f)
+            .background(Color.Black.copy(alpha = 0.5f * alpha)) // 半黑背景跟随透明度渐变
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = dismiss),
         contentAlignment = Alignment.Center
     ) {
-        // 毛玻璃中空圆盘背景
-        val radiusDp = 100.dp
-        val radiusPx = with(LocalDensity.current) { radiusDp.toPx() }
+        val clipboardManager = LocalClipboardManager.current
 
         Box(
             modifier = Modifier
-                .size(radiusDp * 2.5f), // 💡 修复：移除了 .clip(CircleShape)
+                .size(250.dp)
+                .scale(scale) // 应用缩放动画
+                .alpha(alpha), // 应用透明度动画
             contentAlignment = Alignment.Center
         ) {
-            // 你也可以在这里加入 Canvas 画圆环描边，强化视觉感受
+            // 【修复】：把被误删的毛玻璃中空圆环加回来
             Canvas(modifier = Modifier.matchParentSize()) {
                 drawCircle(
                     color = Color.White.copy(alpha = 0.15f),
@@ -917,51 +1108,40 @@ fun RadialMenuOverlay(
                 )
             }
 
-            // 定义想要放在菜单上的按钮列表
             val actions = listOf(
-                Triple(Icons.Filled.SubdirectoryArrowRight, "Move") {
+                Triple(Icons.Filled.SubdirectoryArrowRight, "Move") { dismiss(); viewModel.selectEntry(entryId); viewModel.showSelectSpaceM = true },
+                Triple(Icons.Filled.Link, "Bind") { dismiss(); viewModel.startBindingMode(entryId) },
+                Triple(Icons.Filled.LinkOff, "Unbind") { dismiss(); viewModel.unbindEntryFromGroup(entryId) },
+                Triple(Icons.Filled.ContentCopy, "Copy") {
+                    val entry = viewModel.getEntryFromId(entryId)
+                    if (entry != null) {
+                        val txt = "${FullDateFormat.format(Date(entry.timestamp))}\n" + (if (entry.title.isNullOrBlank()) "" else "【${entry.title}】\n") + entry.content
+                        clipboardManager.setText(AnnotatedString(txt))
+                        viewModel.toastOut("日记已复制")
+                    }
                     dismiss()
-                    viewModel.selectEntry(entryId)
-                    viewModel.showSelectSpaceM = true
-                },
-                // 【新增】：合并绑定按钮
-                Triple(Icons.Filled.Link, "Bind") {
-                    dismiss() // 收起圆盘
-                    viewModel.startBindingMode(entryId) // 进入合并模式
-                },
-                Triple(Icons.Filled.LinkOff, "Unbind") {
-                    dismiss()
-                    viewModel.unbindEntryFromGroup(entryId)
                 }
             )
 
-            // 利用三角函数，把按钮均匀撒在圆周上
             val angleStep = (2 * Math.PI) / actions.size.coerceAtLeast(1)
             val startAngle = -Math.PI / 2
+            val radiusPx = with(LocalDensity.current) { 100.dp.toPx() }
 
             actions.forEachIndexed { index, action ->
                 val (icon, label, onClick) = action
                 val angle = startAngle + index * angleStep
-
                 val offsetX = (radiusPx * kotlin.math.cos(angle)).toFloat()
                 val offsetY = (radiusPx * kotlin.math.sin(angle)).toFloat()
 
                 IconButton(
                     onClick = onClick,
                     modifier = Modifier
-                        .offset(
-                            x = with(LocalDensity.current) { offsetX.toDp() },
-                            y = with(LocalDensity.current) { offsetY.toDp() }
-                        )
+                        .offset(x = with(LocalDensity.current) { offsetX.toDp() }, y = with(LocalDensity.current) { offsetY.toDp() })
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(theme.primaryColor)
                 ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = label,
-                        tint = theme.backgroundColor
-                    )
+                    Icon(imageVector = icon, contentDescription = label, tint = theme.backgroundColor)
                 }
             }
         }
@@ -989,7 +1169,6 @@ fun DiaryCard(
     }
 }
 
-// 抽取后的纯文本组件
 @Composable
 private fun TextDiaryCard(
     entry: DailyEntry,
@@ -997,6 +1176,10 @@ private fun TextDiaryCard(
     haptic: HapticFeedback,
     modifier: Modifier
 ) {
+    // 【新增】：获取查询词和主题高亮色
+    val query = viewModel.searchQuery
+    val highlightColor = viewModel.getThemeBySpace().primaryColor.copy(alpha = 0.4f)
+
     Box(
         modifier = modifier
             .widthIn(max = 220.dp)
@@ -1004,18 +1187,39 @@ private fun TextDiaryCard(
                 viewModel.navigateToEditor(entry.id)
             }
     ) {
-        GlassmorphismBackground(modifier = Modifier.matchParentSize()) // 引入复用组件
-        Text(
-            text = entry.content,
-            modifier = Modifier.padding(16.dp),
-            style = MaterialTheme.typography.bodyMedium.copy(
-                lineHeight = 20.sp,
-                color = getTextColor(false)
-            ),
-            maxLines = 10,
-            overflow = TextOverflow.Ellipsis,
-            fontWeight = FontWeight.Bold
-        )
+        GlassmorphismBackground(modifier = Modifier.matchParentSize())
+        Column(modifier = Modifier.padding(16.dp)) {
+            // 支持标题渲染及高亮
+            if (!entry.title.isNullOrBlank()) {
+                Text(
+                    text = getHighlightedText(entry.title, query, highlightColor, isTitle = true),
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = getTextColor(false)
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+            // 正文渲染：智能截断居中并高亮
+            Text(
+                text = getHighlightedText(
+                    entry.content,
+                    query,
+                    highlightColor,
+                    isTitle = false,
+                    maxContextLength = 35
+                ),
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    lineHeight = 20.sp,
+                    color = getTextColor(false).copy(alpha = if (entry.title.isNullOrBlank()) 1f else 0.8f)
+                ),
+                maxLines = if (!entry.title.isNullOrBlank()) 8 else 7,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = if (entry.title.isNullOrBlank()) FontWeight.Bold else FontWeight.Normal
+            )
+        }
     }
 }
 
@@ -1046,10 +1250,12 @@ private fun ImageDiaryCard(
         shadowElevation = 2.dp,
         color = Color.White
     ) {
-        Box(modifier = Modifier
-            .width(imgWidth)
-            .aspectRatio(entry.imageRatio)
-            .clipToBounds()) {
+        Box(
+            modifier = Modifier
+                .width(imgWidth)
+                .aspectRatio(entry.imageRatio)
+                .clipToBounds()
+        ) {
             CroppedDisplayImage(
                 file = file,
                 scaleAdjustment = if (imgWidth < 200.dp) 0.5f else 1f,
@@ -1344,11 +1550,60 @@ fun NormalTopBar(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = finalColor),
         navigationIcon = {
             IconButton(onClick = { scope.launch { leftDrawerState.open() } }) {
-                Icon(
-                    Icons.Default.Menu,
-                    contentDescription = "Menu",
-                    tint = currentTheme.onSurfaceColor
-                )
+                Icon(Icons.Default.Menu, "Menu", tint = currentTheme.onSurfaceColor)
+            }
+        },
+        actions = {
+            if (viewModel.searchQuery.isNotBlank()) {
+                if (viewModel.searchResults.isNotEmpty()) {
+                    Text(
+                        "${viewModel.currentSearchIndex + 1}/${viewModel.searchResults.size}",
+                        color = currentTheme.onSurfaceColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    IconButton(onClick = {
+                        viewModel.jumpToPrevSearch(
+                            listState,
+                            scope
+                        )
+                    }) {
+                        Icon(
+                            Icons.Default.KeyboardArrowUp,
+                            "Prev",
+                            tint = currentTheme.onSurfaceColor
+                        )
+                    }
+                    IconButton(onClick = {
+                        viewModel.jumpToNextSearch(
+                            listState,
+                            scope
+                        )
+                    }) {
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            "Next",
+                            tint = currentTheme.onSurfaceColor
+                        )
+                    }
+                    IconButton(onClick = {
+                        viewModel.stopSearch()
+                    }) {
+                        Icon(
+                            Icons.Default.Close,
+                            "Stop Search",
+                            tint = currentTheme.onSurfaceColor
+                        )
+                    }
+                } else {
+                    Text(
+                        "No results",
+                        color = currentTheme.onSurfaceColor.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(end = 16.dp),
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
+                }
             }
         },
         title = {
@@ -1359,11 +1614,12 @@ fun NormalTopBar(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { scope.launch { listState.scrollToItem(0) } }
-                    )
+                        onClick = { scope.launch { listState.scrollToItem(0) } })
             ) {
                 Text(
-                    text = FullDateFormat.format(currentTime),
+                    text = (if (viewModel.searchQuery.isBlank()) FullDateFormat else HalfFullDateFormat).format(
+                        currentTime
+                    ),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
@@ -1384,4 +1640,44 @@ fun NormalTopBar(
             }
         }
     )
+}
+
+fun getHighlightedText(
+    text: String,
+    query: String,
+    highlightColor: Color,
+    isTitle: Boolean = false,
+    maxContextLength: Int = 40 // 搜索词前后的保留字符数
+): AnnotatedString {
+    if (query.isBlank() || !text.contains(query, ignoreCase = true)) {
+        return AnnotatedString(text)
+    }
+
+    val startIndex = text.indexOf(query, ignoreCase = true)
+    val endIndex = startIndex + query.length
+
+    return buildAnnotatedString {
+        if (isTitle) {
+            // 标题不截取，仅高亮
+            append(text.substring(0, startIndex))
+            withStyle(SpanStyle(background = highlightColor)) {
+                append(text.substring(startIndex, endIndex))
+            }
+            append(text.substring(endIndex))
+        } else {
+            // 正文截断，保证关键词在中间显示
+            val startCut = maxOf(0, startIndex - maxContextLength)
+            val endCut = minOf(text.length, endIndex + maxContextLength)
+
+            if (startCut > 0) append("...")
+            append(text.substring(startCut, startIndex))
+
+            withStyle(SpanStyle(background = highlightColor)) {
+                append(text.substring(startIndex, endIndex))
+            }
+
+            append(text.substring(endIndex, endCut))
+            if (endCut < text.length) append("...")
+        }
+    }
 }
