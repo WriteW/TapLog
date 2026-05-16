@@ -18,7 +18,7 @@ android {
         minSdk = 26
         targetSdk = 36 // 保持你的新版本
         versionCode = 7
-        versionName = "2.5"
+        versionName = "3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -49,6 +49,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -373,7 +374,8 @@ fun HomeScreen(
                     viewModel.clearAllData()
                     scope.launch { leftDrawerState.close() }
                 },
-                viewModel
+                onCloseSidebar = { scope.launch { leftDrawerState.close() } },
+                viewModel = viewModel
             )
         }
     ) {
@@ -451,7 +453,9 @@ fun HomeScreen(
                         DailyDynamicBackground(theme = currentTheme)
                         // 处理返回键退出空间
                         BackHandler(enabled = true) {
-                            if (leftDrawerState.isOpen) {
+                            if (viewModel.viewingCapsuleId != null) {
+                                viewModel.exitCapsuleSpace() // 退出胶囊虚拟空间
+                            } else if (leftDrawerState.isOpen) {
                                 scope.launch { leftDrawerState.close() }
                             } else if (rightDrawerState.isOpen) {
                                 scope.launch { rightDrawerState.close() }
@@ -473,62 +477,187 @@ fun HomeScreen(
                         Scaffold(
                             containerColor = Color.Transparent,
                             topBar = {
+                                val spaceColor =
+                                    viewModel.getSpaceFromId(viewModel.selectedDSpaceId)?.colorBgArgb
+                                val finalColor =
+                                    spaceColor?.let { Color(it).copy(alpha = 0.5f) }
+                                        ?: Color.White.copy(alpha = 0.5f)
                                 AnimatedContent(
-                                    targetState = viewModel.isBatchManaging,
-                                    label = "TopBarTransition"
-                                ) { isBatch ->
-                                    if (isBatch) {
-                                        // 【新增】：判断是否处于合并模式 (Binding Mode)
-                                        if (viewModel.bindingTargetId != null) {
-                                            CenterAlignedTopAppBar(
-                                                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
-                                                title = {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .clip(RoundedCornerShape(12.dp))
-                                                            .clickable { viewModel.executeBinding() } // 点击执行合并
-                                                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                                                        contentAlignment = Alignment.Center
-                                                    ) {
-                                                        Text(
-                                                            text = "Click me after selecting the entries to combine.",
-                                                            color = currentTheme.primaryColor,
-                                                            style = MaterialTheme.typography.titleSmall.copy(
-                                                                fontWeight = FontWeight.Bold,
-                                                                lineHeight = 18.sp
-                                                            ),
-                                                            textAlign = TextAlign.Center,
-                                                            maxLines = 2 // 防止小屏幕手机文字过长挤爆
-                                                        )
-                                                    }
-                                                },
-                                                navigationIcon = {
-                                                    // 左侧提供退出按钮，点击后恢复原状
-                                                    IconButton({ viewModel.stopBatchSelecting() }) {
-                                                        Icon(Icons.Default.Close, contentDescription = "Cancel Binding")
-                                                    }
+                                    targetState = viewModel.viewingCapsuleId != null,
+                                    label = "CapsuleSpaceTransition"
+                                ) { inCapsule ->
+                                    if (inCapsule) {
+                                        val capsule =
+                                            viewModel.timeCapsules.find { it.id == viewModel.viewingCapsuleId }
+                                        val creationDate =
+                                            capsule?.createdAt?.let { Date(it) } ?: currentTime
+                                        // 胶囊空间专属 TopBar
+                                        CenterAlignedTopAppBar(
+                                            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                                containerColor = finalColor
+                                            ),
+                                            title = {
+                                                Column(
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    modifier = Modifier.padding(vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "From: ${
+                                                            FullDateFormat.format(
+                                                                creationDate
+                                                            )
+                                                        }",
+                                                        style = MaterialTheme.typography.bodySmall.copy(
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Medium
+                                                        ),
+                                                        color = currentTheme.onSurfaceColor.copy(
+                                                            alpha = 0.7f
+                                                        ),
+                                                        fontFamily = dymonFont
+                                                    )
+                                                    Text(
+                                                        text = TimeFormat.format(
+                                                            creationDate
+                                                        ),
+                                                        style = MaterialTheme.typography.displaySmall.copy(
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 24.sp,
+                                                            letterSpacing = 1.sp
+                                                        ),
+                                                        color = currentTheme.primaryColor,
+                                                        fontFamily = dymonFont
+                                                    )
                                                 }
-                                            )
-                                        } else {
-                                            // 原本的普通批量管理 TopBar
-                                            CenterAlignedTopAppBar(
-                                                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Transparent),
-                                                title = { Text("批量操作", style = MaterialTheme.typography.titleMedium) },
-                                                navigationIcon = {
-                                                    IconButton({ viewModel.stopBatchSelecting() }) {
-                                                        Icon(Icons.Default.Close, contentDescription = "Close Batch")
-                                                    }
+                                            },
+                                            navigationIcon = {
+                                                IconButton({ viewModel.exitCapsuleSpace() }) {
+                                                    Icon(
+                                                        Icons.AutoMirrored.Filled.ArrowBack,
+                                                        contentDescription = "Exit Capsule"
+                                                    )
                                                 }
-                                            )
-                                        }
+                                            }
+                                        )
                                     } else {
-                                        NormalTopBar(viewModel, scope, currentTheme, leftDrawerState, listState, currentTime)
+                                        AnimatedContent(
+                                            targetState = viewModel.isBatchManaging,
+                                            label = "TopBarTransition"
+                                        ) { isBatch ->
+                                            if (isBatch) {
+                                                // 【新增】：封存胶囊模式
+                                                if (viewModel.pendingCapsule != null) {
+                                                    CenterAlignedTopAppBar(
+                                                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                                            containerColor = finalColor
+                                                        ),
+                                                        title = {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .clip(RoundedCornerShape(12.dp))
+                                                                    .clickable { viewModel.confirmCapsuleCreation() }
+                                                                    .padding(8.dp),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Text(
+                                                                    text = "Confirm ${viewModel.batchEntries.size} entries into Capsule",
+                                                                    color = currentTheme.primaryColor,
+                                                                    style = MaterialTheme.typography.titleSmall.copy(
+                                                                        fontWeight = FontWeight.Bold
+                                                                    )
+                                                                )
+                                                            }
+                                                        },
+                                                        navigationIcon = {
+                                                            IconButton({ viewModel.stopBatchSelecting() }) {
+                                                                Icon(
+                                                                    Icons.Default.Close,
+                                                                    null
+                                                                )
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                                // 【新增】：判断是否处于合并模式 (Binding Mode)
+                                                else if (viewModel.bindingTargetId != null) {
+                                                    CenterAlignedTopAppBar(
+                                                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                                            containerColor = finalColor
+                                                        ),
+                                                        title = {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .clip(RoundedCornerShape(12.dp))
+                                                                    .clickable { viewModel.executeBinding() } // 点击执行合并
+                                                                    .padding(
+                                                                        horizontal = 8.dp,
+                                                                        vertical = 8.dp
+                                                                    ),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Text(
+                                                                    text = "Click me after selecting the entries to combine.",
+                                                                    color = currentTheme.primaryColor,
+                                                                    style = MaterialTheme.typography.titleSmall.copy(
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        lineHeight = 18.sp
+                                                                    ),
+                                                                    textAlign = TextAlign.Center,
+                                                                    maxLines = 2 // 防止小屏幕手机文字过长挤爆
+                                                                )
+                                                            }
+                                                        },
+                                                        navigationIcon = {
+                                                            // 左侧提供退出按钮，点击后恢复原状
+                                                            IconButton({ viewModel.stopBatchSelecting() }) {
+                                                                Icon(
+                                                                    Icons.Default.Close,
+                                                                    contentDescription = "Cancel Binding"
+                                                                )
+                                                            }
+                                                        }
+                                                    )
+                                                } else {
+                                                    // 原本的普通批量管理 TopBar
+                                                    CenterAlignedTopAppBar(
+                                                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                                            containerColor = Color.Transparent
+                                                        ),
+                                                        title = {
+                                                            Text(
+                                                                "批量操作",
+                                                                style = MaterialTheme.typography.titleMedium
+                                                            )
+                                                        },
+                                                        navigationIcon = {
+                                                            IconButton({ viewModel.stopBatchSelecting() }) {
+                                                                Icon(
+                                                                    Icons.Default.Close,
+                                                                    contentDescription = "Close Batch"
+                                                                )
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            } else {
+                                                NormalTopBar(
+                                                    viewModel,
+                                                    scope,
+                                                    currentTheme,
+                                                    leftDrawerState,
+                                                    listState,
+                                                    currentTime
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             },
                             floatingActionButton = {
-                                AddFAB(currentTheme, viewModel, isAddFABExpand)
+                                if (viewModel.viewingCapsuleId == null) {
+                                    AddFAB(currentTheme, viewModel, isAddFABExpand)
+                                }
                             }
                         ) { padding ->
                             Box(
@@ -737,9 +866,11 @@ fun EntryWithButtons(entry: DailyEntry, viewModel: DailyViewModel) {
                     .width(animatedButtonSize)
             ) {
                 if (entry.supportPortal() && !viewModel.isBatchManaging) {
-                    Box(modifier = Modifier
-                        .width(animatedButtonSize)
-                        .aspectRatio(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .width(animatedButtonSize)
+                            .aspectRatio(1f)
+                    ) {
                         PortalButton(entry, viewModel)
                     }
                     if (isSelected) Spacer(modifier = Modifier.height(2.dp))
@@ -1046,10 +1177,12 @@ private fun ImageDiaryCard(
         shadowElevation = 2.dp,
         color = Color.White
     ) {
-        Box(modifier = Modifier
-            .width(imgWidth)
-            .aspectRatio(entry.imageRatio)
-            .clipToBounds()) {
+        Box(
+            modifier = Modifier
+                .width(imgWidth)
+                .aspectRatio(entry.imageRatio)
+                .clipToBounds()
+        ) {
             CroppedDisplayImage(
                 file = file,
                 scaleAdjustment = if (imgWidth < 200.dp) 0.5f else 1f,
