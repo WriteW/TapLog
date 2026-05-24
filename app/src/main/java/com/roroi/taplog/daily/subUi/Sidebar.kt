@@ -313,33 +313,41 @@ fun LeftSidebarContent(
     } else {
         hazeModifier.background(theme.backgroundColor)
     }
+    LazyColumn {
+        item {
+            ModalDrawerSheet(
+                drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                drawerContainerColor = Color.Transparent,
+                drawerContentColor = theme.onSurfaceColor,
+                modifier = hazeModifier
+                    .width(300.dp)
+            ) {
 
-    ModalDrawerSheet(
-        drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
-        drawerContainerColor = Color.Transparent,
-        drawerContentColor = theme.onSurfaceColor,
-        modifier = hazeModifier
-            .width(300.dp)
-    ) {
+                LeftSidebarHeader(theme)
+                LeftSidebarActions(viewModel, onExport, onImport)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp, horizontal = 28.dp))
 
-        LeftSidebarHeader(theme)
-        LeftSidebarActions(viewModel, onExport, onImport)
-        HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp, horizontal = 28.dp))
+                if (viewModel == null || viewModel.getSpaceFromId(viewModel.selectedDSpaceId) != null) {
+                    LeftSideSpaceEditor(viewModel)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(
+                            vertical = 24.dp,
+                            horizontal = 28.dp
+                        )
+                    )
+                }
 
-        if (viewModel == null || viewModel.getSpaceFromId(viewModel.selectedDSpaceId) != null) {
-            LeftSideSpaceEditor(viewModel)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp, horizontal = 28.dp))
+                // 时间胶囊
+                TimeCapsuleItem(viewModel = viewModel, onCloseSidebar = onCloseSidebar)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 28.dp))
+                // 挂载 Others 栏
+                LeftSidebarOthers(theme = theme)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 28.dp))
+
+                // 挂载 Danger Zone 栏
+                LeftSidebarDangerZone(viewModel = viewModel) { clearConfirmCount = 1 }
+            }
         }
-
-        // 时间胶囊
-        TimeCapsuleItem(viewModel = viewModel, onCloseSidebar = onCloseSidebar)
-        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 28.dp))
-        // 挂载 Others 栏
-        LeftSidebarOthers(theme = theme)
-        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp, horizontal = 28.dp))
-
-        // 挂载 Danger Zone 栏
-        LeftSidebarDangerZone(viewModel = viewModel) { clearConfirmCount = 1 }
     }
 }
 
@@ -581,7 +589,7 @@ fun RightSidebarContent(
                     )
                     RightSidebarGroupItem(
                         startIndex = startIndices[index],
-                        index = index, // 传入索引
+                        // 传入索引
                         group = group,
                         viewModel = viewModel,
                         theme = theme,
@@ -596,7 +604,6 @@ fun RightSidebarContent(
 @Composable
 fun RightSidebarGroupItem(
     startIndex: Int,
-    index: Int,
     group: TimelineGroup,
     viewModel: DailyViewModel,
     theme: DailyTimeTheme,
