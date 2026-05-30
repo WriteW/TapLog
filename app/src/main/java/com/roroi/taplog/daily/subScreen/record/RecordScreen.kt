@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
@@ -30,6 +31,7 @@ import com.roroi.taplog.daily.viewmodel.RecordDayData
 import com.roroi.taplog.daily.viewmodel.RecordEvent
 import kotlinx.serialization.json.Json
 import java.util.Calendar
+import kotlin.math.abs
 
 // 根据事件名称生成固定的优美色彩
 fun getEventColor(name: String, fallback: Color): Color {
@@ -299,7 +301,7 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, activeColor: Color
             
             // [核心修改] 并发渲染算法：使用 DashPathEffect 使同段线条呈现颜色交替的斑马纹条带，完美融合！
             // 第一个事件实线，后面的事件用虚线叠加，产生交织的一条粗线。
-            val pathEffect = if (eventIndex == 0) null else PathEffect.dashPath(floatArrayOf(40f, 40f), (eventIndex * 20f))
+            val pathEffect = if (eventIndex == 0) null else PathEffect.dashPathEffect(xfloatArrayOf(40f, 40f), (eventIndex * 20f))
             
             if (s == e) {
                 drawLine(eventColor, Offset(getX(startP), getY(s)), Offset(getX(endP), getY(e)), strokeWidth = strokeW, cap = StrokeCap.Round, pathEffect = pathEffect)
