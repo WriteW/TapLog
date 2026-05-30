@@ -14,5 +14,6 @@ data class DSpace(
     val password: String = "",
     var isEncrypted: Boolean = false,
     val encryptImages: Boolean = true,
-    val encryptAudio: Boolean = true
+    val encryptAudio: Boolean = true,
+    val customRecordEvents: List<String> = emptyList()
 )

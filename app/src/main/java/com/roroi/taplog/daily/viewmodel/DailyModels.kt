@@ -57,20 +57,6 @@ data class TimeCapsule(
     val isViewed: Boolean = false
 )
 
-@Serializable
-data class DSpace(
-    val colorBgArgb: Int,
-    val colorBallArgb: Int,
-    val isDark: Boolean = false,
-    val name: String,
-    val id: String = UUID.randomUUID().toString(),
-    val entryId: String,
-    val password: String = "",
-    var isEncrypted: Boolean = false,
-    val encryptImages: Boolean = true,
-    val encryptAudio: Boolean = true,
-    val customRecordEvents: List<String> = emptyList()
-)
 
 data class TimelineGroup(
     val timestamp: Long,
