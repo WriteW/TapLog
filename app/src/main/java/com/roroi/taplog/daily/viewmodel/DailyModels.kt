@@ -6,8 +6,22 @@ import kotlinx.serialization.Serializable
 import java.util.UUID
 
 enum class EntryType {
-    TEXT, IMAGE
+    TEXT, IMAGE, AUDIO, RECORD // [修改1] 新增 AUDIO 和 RECORD
 }
+// [修改11] 新增用于一整天记录的事件结构
+@Serializable
+data class RecordEvent(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val startTime: Long = 0L,
+    val endTime: Long? = null,
+    val iconOrText: String = ""
+)
+
+@Serializable
+data class RecordDayData(
+    val events: List<RecordEvent> = emptyList(),
+    val isStopped: Boolean = false
+)
 
 @Serializable
 data class CropParams(
@@ -42,6 +56,7 @@ data class TimeCapsule(
     val entryIds: List<String>,
     val isViewed: Boolean = false
 )
+
 
 data class TimelineGroup(
     val timestamp: Long,

@@ -572,7 +572,11 @@ val targetColorList = listOf(
     ThemePreset(Color(0xFF42A5F5), Color(0xFFF5F7FB), false), // 注意：这一项背景是蓝色，主色是浅色
     ThemePreset(Color(0xFFF8F6FA), Color(0xFFAB47BC), false),
     ThemePreset(Color(0xFFFBF6F8), Color(0xFFEC407A), false),
-
+    ThemePreset(Color(0xFFFDF5E6), Color(0xFFFF8C00), false),
+    ThemePreset(Color(0xFFF0FFF0), Color(0xFF2E8B57), false),
+    ThemePreset(Color(0xFFF5FFFA), Color(0xFF20B2AA), false),
+    ThemePreset(Color(0xFFF8F8FF), Color(0xFF4169E1), false),
+    ThemePreset(Color(0xFFFFF0F5), Color(0xFFC71585), false),
     // 深色模式 (isDark = true)
     ThemePreset(Color(0xFF121212), Color(0xFFFF6F61), true),
     ThemePreset(Color(0xFF101010), Color(0xFFFF8A50), true),
@@ -581,7 +585,11 @@ val targetColorList = listOf(
     ThemePreset(Color(0xFF0E1416), Color(0xFF26C6DA), true),
     ThemePreset(Color(0xFF0E1018), Color(0xFF64B5F6), true),
     ThemePreset(Color(0xFF120F16), Color(0xFFBA68C8), true),
-    ThemePreset(Color(0xFF141012), Color(0xFFF06292), true)
+    ThemePreset(Color(0xFF141012), Color(0xFFF06292), true),
+            ThemePreset(Color(0xFF1A1A1D), Color(0xFFC3073F), true),
+    ThemePreset(Color(0xFF0D1B2A), Color(0xFFE0E1DD), true),
+    ThemePreset(Color(0xFF222831), Color(0xFF00ADB5), true),
+    ThemePreset(Color(0xFF2C3E50), Color(0xFFE74C3C), true)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
