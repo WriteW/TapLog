@@ -12,5 +12,7 @@ data class DSpace(
     val id: String = UUID.randomUUID().toString(),
     val entryId: String,
     val password: String = "",
-    var isEncrypted: Boolean = false
+    var isEncrypted: Boolean = false,
+    val encryptImages: Boolean = true,
+    val encryptAudio: Boolean = true
 )
