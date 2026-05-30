@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.Calendar
 import kotlin.math.max
@@ -204,44 +205,57 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         spaceDestination = spaceId
     }
 
-    fun moveEntry(originalSpaceId: String?, targetSpaceId: String?) {
+    fun moveEntry(originalSpaceId: String?, targetSpaceId: String?, targetPassword: String? = null) {
         if (selectedEntryId.isNullOrBlank() && batchEntries.isEmpty()) return
-        // 1. 启动单一协程处理所有类型
+
         viewModelScope.launch {
             try {
-                // 设置 UI 为加载中状态
                 showLoadingDialog = true
-
                 if (batchEntries.isEmpty() && selectedEntryId != null) batchEntries.add(selectedEntryId.toString())
 
                 batchEntries.forEach { entryId ->
                     val entry = getEntryFromId(entryId)
                     entry?.let {
                         when (entry.type) {
-                            EntryType.TEXT -> {
+                            // 文本和全天记录只有数据本身
+                            EntryType.TEXT, EntryType.RECORD -> {
                                 repository.moveTextEntry(originalSpaceId, targetSpaceId, entry)
                             }
-                            EntryType.IMAGE -> {
-                                // 注意：根据你之前的定义，Repository 里的方法名是 moveImage
+                            // 图片和音频附带实体媒体文件
+                            EntryType.IMAGE, EntryType.AUDIO -> {
                                 repository.moveImageEntry(originalSpaceId, targetSpaceId, entry)
                             }
                         }
                     }
                 }
 
-                // 2. 移动成功后统一刷新数据
-                loadData()
+                // [核心修复] 如果目标空间是加密的，移动完文件后必须立即加密刚刚放入的文件！
+                val targetSpace = getSpaceFromId(targetSpaceId)
+                if (targetSpace != null && targetSpace.isEncrypted && targetPassword != null) {
+                    com.roroi.taplog.daily.viewmodel.encryption.lockAndExit(
+                        getApplication(),
+                        targetPassword,
+                        targetSpace.id,
+                        targetSpace.encryptImages,
+                        targetSpace.encryptAudio
+                    )
+                }
 
+                loadData()
             } catch (e: Exception) {
-                // 3. 错误处理：记录日志或通过 Channel 发送弹窗通知
                 e.printStackTrace()
-                // _errorEvents.send("移动失败: ${e.message}")
             } finally {
                 showLoadingDialog = false
-                // 【修复】：移动结束后，强制停止多选，清空长按焦点
                 stopBatchSelecting()
                 unFocusEntry()
             }
+        }
+    }
+
+    // [新增] 可靠的 Record 跳转函数
+    fun navigateToRecord(id: String) {
+        viewModelScope.launch {
+            navigationEvent.emit(Pair("portal", "record?id=$id"))
         }
     }
     // 修改更改密码逻辑
@@ -372,6 +386,53 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    // 页面切换发射
+    val navigationEvent = MutableSharedFlow<Pair<String, String>>()
+    // [修改11] 打开一天的 Record 页面
+    fun openRecordDay() {
+        viewModelScope.launch {
+            // 找到今天是否已经有未 stopped 的 RECORD entry
+            val todayStart = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
+            }.timeInMillis
+
+            var recordEntry = _groupedEntries.value.flatMap { it.items }.find {
+                it.type == EntryType.RECORD && it.timestamp >= todayStart &&
+                        !Json.decodeFromString<RecordDayData>(it.content).isStopped
+            }
+
+            if (recordEntry == null) {
+                // 创建一个新的
+                val newEntry = DailyEntry(
+                    timestamp = System.currentTimeMillis(),
+                    type = EntryType.RECORD,
+                    content = Json.encodeToString(RecordDayData())
+                )
+                repository.saveEntry(newEntry, selectedDSpaceId)
+                recordEntry = newEntry
+            }
+            loadData() // 刷新底层
+            navigationEvent.emit(Pair("portal", "record?id=${recordEntry.id}"))
+        }
+    }
+
+    // [修改1] 新增音频
+    fun addAudioEntry(uri: Uri, name: String) {
+        viewModelScope.launch {
+            val path = repository.saveImage(uri, selectedDSpaceId) // 复用 saveImage 保存文件
+            val entry = DailyEntry(
+                timestamp = System.currentTimeMillis(),
+                type = EntryType.AUDIO,
+                title = name,
+                content = path
+            )
+            repository.saveEntry(entry, selectedDSpaceId)
+            loadData()
+        }
+    }
+
+    // [修改6] 加密出口注入图片加密策略
     suspend fun lockCurrentSpaceIfNeeded() {
         val currentSpaceId = selectedDSpaceId ?: return
         val space = getSpaceFromId(currentSpaceId)
@@ -380,16 +441,14 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             com.roroi.taplog.daily.viewmodel.encryption.lockAndExit(
                 getApplication(),
                 currentUnlockedPassword!!,
-                currentSpaceId
+                currentSpaceId,
+                space.encryptImages,
+                space.encryptAudio // [新增：传入音频加密策略]
             )
             // 上锁完成后，擦除内存中的密码
             currentUnlockedPassword = null
         }
     }
-
-    // 页面切换发射
-    val navigationEvent = MutableSharedFlow<Pair<String, String>>()
-
     // 图片查看器状态
     var viewingImageEntry by mutableStateOf<DailyEntry?>(null)
         private set
