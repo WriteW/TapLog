@@ -19,6 +19,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.roroi.taplog.daily.subScreen.EditorScreen
 import com.roroi.taplog.daily.subScreen.PortalEditor
+import com.roroi.taplog.daily.subScreen.record.RecordScreen
 import com.roroi.taplog.daily.viewmodel.DailyViewModel
 import com.roroi.taplog.ui.theme.TapLogTheme
 
@@ -110,6 +111,10 @@ class DailyActivity : ComponentActivity() {
                     composable("portal?id={id}") { backStackEntry ->
                         val fatherId = backStackEntry.arguments?.getString("id")
                         fatherId?.let { PortalEditor(viewModel = viewModel, it) }
+                    }
+                    composable("record?id={id}") { backStackEntry ->
+                        val recordId = backStackEntry.arguments?.getString("id") ?: return@composable
+                        RecordScreen(viewModel = viewModel, recordId = recordId, onBack = { navController.popBackStack() })
                     }
 
                     composable("addCapsule") {

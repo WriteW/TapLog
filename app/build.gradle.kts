@@ -17,8 +17,8 @@ android {
         applicationId = "com.roroi.taplog"
         minSdk = 26
         targetSdk = 36 // 保持你的新版本
-        versionCode = 10
-        versionName = "3.0"
+        versionCode = 11
+        versionName = "3.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

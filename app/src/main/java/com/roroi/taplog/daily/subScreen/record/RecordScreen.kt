@@ -35,7 +35,7 @@ import java.util.Calendar
 import kotlin.math.abs
 
 // 根据事件名称生成固定的优美色彩
-fun getEventColor(name: String, fallback: Color): Color {
+fun getEventColor(name: String): Color {
     if (name == "🛏️") return Color(0xFF5C6BC0)
     if (name == "💻") return Color(0xFFEF5350)
     if (name == "🎮") return Color(0xFF66BB6A)
@@ -52,7 +52,7 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
     val space = viewModel.getSpaceFromId(viewModel.selectedDSpaceId)
     
     var data by remember { 
-        mutableStateOf(try { Json.decodeFromString<RecordDayData>(entry.content) } catch (e: Exception) { RecordDayData() }) 
+        mutableStateOf(try { Json.decodeFromString<RecordDayData>(entry.content) } catch (_: Exception) { RecordDayData() })
     } 
 
     val saveData = { newData: RecordDayData ->
@@ -143,7 +143,7 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                         Icon(Icons.Default.Delete, "Delete", tint = Color.Red.copy(alpha = 0.8f))
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = theme.backgroundColor.copy(0.7f))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = theme.backgroundColor.copy(0.7f))
             )
         }
     ) { padding ->
@@ -192,7 +192,7 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                                 items(allEvents) { (icon, label) ->
                                     val isOngoing = data.events.any { it.iconOrText == icon && it.endTime == null }
                                     // [修改] 获取专属随机色
-                                    val eventColor = remember(icon) { getEventColor(icon, theme.primaryColor) }
+                                    val eventColor = remember(icon) { getEventColor(icon) }
                                     
                                     EventButton(
                                         icon = icon, label = label,
@@ -264,16 +264,14 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, activeColor: Color
         val lineSpacing = canvasH / 5f
         val currentMillis = System.currentTimeMillis()
 
-        val dayStart = Calendar.getInstance().apply { 
+        val dayStart = Calendar.getInstance().apply {
             timeInMillis = entryTimestamp; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }.timeInMillis
 
-        // [修改] 加大左侧文字与线条的距离，防止挤压
-        val startX = 76.dp.toPx() 
+        val startX = 76.dp.toPx()
         val endX = canvasW - 40.dp.toPx()
         val distinctEvents = data.events.map { it.iconOrText }.distinct()
-        
-        // [修改] 将线宽增加到 24dp
+
         val strokeW = 24.dp.toPx()
 
         // 绘制宽轨道背景线
@@ -281,7 +279,7 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, activeColor: Color
             val y = lineSpacing * (i + 1)
             drawContext.canvas.nativeCanvas.drawText(
                 "${String.format("%02d", i * 6)}:00",
-                12.dp.toPx(), y + 4.dp.toPx(), // 文字靠左
+                12.dp.toPx(), y + 4.dp.toPx(),
                 android.graphics.Paint().apply { color = android.graphics.Color.DKGRAY; textSize = 12.sp.toPx(); typeface = android.graphics.Typeface.DEFAULT_BOLD; textAlign = android.graphics.Paint.Align.LEFT }
             )
             drawLine(
@@ -301,14 +299,13 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, activeColor: Color
             val startP = getProgress(startMillis)
             val endP = getProgress(endMillis)
             if (startP >= endP && !isOngoing) return
-            
+
             val s = getSection(startP)
             val e = getSection(endP)
-            
-            // [核心修改] 并发渲染算法：使用 DashPathEffect 使同段线条呈现颜色交替的斑马纹条带，完美融合！
-            // 第一个事件实线，后面的事件用虚线叠加，产生交织的一条粗线。
-            val pathEffect = if (eventIndex == 0) null else PathEffect.dashPathEffect(xfloatArrayOf(40f, 40f), (eventIndex * 20f))
-            
+
+            // 使用 DashPathEffect 使同段线条呈现颜色交替的斑马纹条带
+            val pathEffect = if (eventIndex == 0) null else PathEffect.dashPathEffect(floatArrayOf(40f, 40f), (eventIndex * 20f))
+
             if (s == e) {
                 drawLine(eventColor, Offset(getX(startP), getY(s)), Offset(getX(endP), getY(e)), strokeWidth = strokeW, cap = StrokeCap.Round, pathEffect = pathEffect)
             } else {
@@ -316,18 +313,31 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, activeColor: Color
                 for (i in (s + 1) until e) drawLine(eventColor, Offset(startX, getY(i)), Offset(endX, getY(i)), strokeWidth = strokeW, cap = StrokeCap.Round, pathEffect = pathEffect)
                 drawLine(eventColor, Offset(startX, getY(e)), Offset(getX(endP), getY(e)), strokeWidth = strokeW, cap = StrokeCap.Round, pathEffect = pathEffect)
             }
-            
-            // [修改] 绘制起点端点：加粗白边距，使紧挨着的点界限分明
-            drawCircle(Color.White, radius = 9.dp.toPx(), center = Offset(getX(startP), getY(s)))
-            drawCircle(eventColor, radius = 5.dp.toPx(), center = Offset(getX(startP), getY(s)))
-            
+
+            val startPoint = Offset(getX(startP), getY(s))
             val endPoint = Offset(getX(endP), getY(e))
-            if (!isOngoing) {
-                drawCircle(Color.White, radius = 9.dp.toPx(), center = endPoint)
-                drawCircle(eventColor, radius = 5.dp.toPx(), center = endPoint)
+
+            // ================= 核心修复 =================
+            // 判定：如果是同一行，并且两个点之间的物理像素距离不足 22dp（严重挤压）
+            val isVeryShort = (s == e) && (endPoint.x - startPoint.x < 22.dp.toPx())
+
+            if (isVeryShort && !isOngoing) {
+                // 【胶囊合并】：转而在这极短的距离内画一条线头圆润的粗线
+                // 当距离为 0 时，这会天然画出一个完美的圆；距离稍微拉开时，它是一个优美的胶囊(Pill)！
+                drawLine(Color.White, startPoint, endPoint, strokeWidth = 18.dp.toPx(), cap = StrokeCap.Round)
+                drawLine(eventColor, startPoint, endPoint, strokeWidth = 10.dp.toPx(), cap = StrokeCap.Round)
             } else {
-                drawCircle(Color.White.copy(alpha = pulseAlpha), radius = 12.dp.toPx(), center = endPoint)
-                drawCircle(Color.Red, radius = 6.dp.toPx(), center = endPoint)
+                // 距离足够长，正常起终点界限分明
+                drawCircle(Color.White, radius = 9.dp.toPx(), center = startPoint)
+                drawCircle(eventColor, radius = 5.dp.toPx(), center = startPoint)
+
+                if (!isOngoing) {
+                    drawCircle(Color.White, radius = 9.dp.toPx(), center = endPoint)
+                    drawCircle(eventColor, radius = 5.dp.toPx(), center = endPoint)
+                } else {
+                    drawCircle(Color.White.copy(alpha = pulseAlpha), radius = 12.dp.toPx(), center = endPoint)
+                    drawCircle(Color.Red, radius = 6.dp.toPx(), center = endPoint)
+                }
             }
         }
 
@@ -335,16 +345,13 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, activeColor: Color
             val eventIndex = distinctEvents.indexOf(event.iconOrText)
             val isOngoing = event.endTime == null && !data.isStopped
             val calculateEnd = event.endTime ?: currentMillis
-            
-            // 获取该事件专属颜色
-            val eventColor = getEventColor(event.iconOrText, activeColor)
+
+            val eventColor = getEventColor(event.iconOrText)
 
             drawActiveBlock(event.startTime, calculateEnd, eventColor, eventIndex, isOngoing)
-            
-            // [修改] Emoji 上下左右交错排列算法
-            // 偶数在上方，奇数在下方
+
             val isUp = eventIndex % 2 == 0
-            val iconYOffset = if (isUp) -24.dp.toPx() else 36.dp.toPx() // 下方的稍微多留点给粗线
+            val iconYOffset = if (isUp) -24.dp.toPx() else 36.dp.toPx()
 
             drawContext.canvas.nativeCanvas.drawText(
                 event.iconOrText, getX(getProgress(event.startTime)), getY(getSection(getProgress(event.startTime))) + iconYOffset,

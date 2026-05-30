@@ -3,7 +3,9 @@ package com.roroi.taplog.daily
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.Shader
+import android.media.MediaPlayer
 import android.os.Build
+import android.provider.OpenableColumns
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -25,6 +27,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -62,13 +65,17 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.SensorDoor
 import androidx.compose.material.icons.filled.SubdirectoryArrowRight
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -89,6 +96,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
@@ -123,9 +131,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -160,9 +172,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 
 // --- 布局常量配置 ---
 // 左侧：时间文字区域的宽度 (控制时间离左屏幕的距离 + 文字活动空间)
@@ -257,6 +266,97 @@ fun Modifier.diaryGestures(
 fun HomeScreen(
     viewModel: DailyViewModel
 ) {
+    val context = LocalContext.current
+    var audioUriToName by remember { mutableStateOf<android.net.Uri?>(null) }
+    var audioNameInput by remember { mutableStateOf("") }
+    var showAudioNameDialog by remember { mutableStateOf(false) }
+    val audioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            audioUriToName = uri
+            // 自动读取文件名填充到输入框
+            var displayName = "New Audio"
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1) {
+                        displayName = cursor.getString(nameIndex)
+                    }
+                }
+            }
+            // 移除文件后缀名（例如 .mp3）使标题更美观
+            val lastDot = displayName.lastIndexOf('.')
+            if (lastDot > 0) displayName = displayName.substring(0, lastDot)
+
+            audioNameInput = displayName
+            showAudioNameDialog = true // 唤醒命名弹窗
+        }
+    }
+// [新增] 用于移动到加密空间时的密码验证状态
+    var moveTargetSpaceId by remember { mutableStateOf<String?>(null) }
+    var showMovePasswordDialog by remember { mutableStateOf(false) }
+    // [修改] 选择目标空间移动弹窗逻辑
+    if (viewModel.showSelectSpaceM) {
+        MoveEntryTo(
+            onDismiss = { viewModel.showSelectSpaceM = false },
+            onConfirm = { targetSpaceId ->
+                viewModel.showSelectSpaceM = false
+                val realTarget = if (targetSpaceId == "main") null else targetSpaceId
+                val targetSpace = viewModel.getSpaceFromId(realTarget)
+
+                // 如果目标空间是加密的，必须先输入密码才能移入并执行加密！
+                if (targetSpace != null && targetSpace.isEncrypted) {
+                    moveTargetSpaceId = realTarget
+                    showMovePasswordDialog = true
+                } else {
+                    viewModel.moveEntry(viewModel.selectedDSpaceId, realTarget, null)
+                }
+            },
+            viewModel
+        )
+    }
+
+    // [新增] 移入加密空间时的密码输入框
+    if (showMovePasswordDialog) {
+        PasswordCheckDialog(
+            onDismiss = { showMovePasswordDialog = false },
+            onConfirm = { inputPassword ->
+                viewModel.moveEntry(viewModel.selectedDSpaceId, moveTargetSpaceId, inputPassword)
+                showMovePasswordDialog = false
+            },
+            title = "Verify Target Space"
+        )
+    }
+    // 音频命名确认弹窗
+    if (showAudioNameDialog && audioUriToName != null) {
+        AlertDialog(
+            onDismissRequest = { showAudioNameDialog = false; audioUriToName = null },
+            title = { Text("Audio Name") },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = audioNameInput,
+                    onValueChange = { audioNameInput = it },
+                    singleLine = true,
+                    label = { Text("Name") }
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    viewModel.addAudioEntry(audioUriToName!!, audioNameInput)
+                    showAudioNameDialog = false
+                    audioUriToName = null
+                }) { Text("Confirm") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAudioNameDialog = false; audioUriToName = null }) {
+                    Text(
+                        "Cancel"
+                    )
+                }
+            }
+        )
+    }
     val listState = rememberSaveable(saver = LazyListState.Saver) {
         LazyListState()
     }
@@ -265,7 +365,6 @@ fun HomeScreen(
     }
     val groups by viewModel.groupedEntries.collectAsState() // 比较核心
     val uiMessage by viewModel.uiMessage.collectAsState()
-    val context = LocalContext.current
     val currentTheme = viewModel.getThemeBySpace()
 
     // 短期状态===
@@ -663,12 +762,12 @@ fun HomeScreen(
                                                                     viewModel.batchEntries.mapNotNull {
                                                                         viewModel.getEntryFromId(it)
                                                                     }.joinToString("\n===\n") {
-                                                                            "${
-                                                                                FullDateFormat.format(
-                                                                                    Date(it.timestamp)
-                                                                                )
-                                                                            }\n" + (if (it.title.isNullOrBlank()) "" else "【${it.title}】\n") + it.content
-                                                                        }
+                                                                        "${
+                                                                            FullDateFormat.format(
+                                                                                Date(it.timestamp)
+                                                                            )
+                                                                        }\n" + (if (it.title.isNullOrBlank()) "" else "【${it.title}】\n") + it.content
+                                                                    }
                                                                 clipboardManager.setText(
                                                                     AnnotatedString(copiedText)
                                                                 )
@@ -699,7 +798,12 @@ fun HomeScreen(
                             },
                             floatingActionButton = {
                                 if (viewModel.viewingCapsuleId == null) {
-                                    AddFAB(currentTheme, viewModel, isAddFABExpand)
+                                    AddFAB(
+                                        currentTheme = currentTheme,
+                                        viewModel = viewModel,
+                                        isExpanded = isAddFABExpand,
+                                        onAudioClick = { audioPicker.launch("audio/*") } // 通过闭包向外传递点击事件
+                                    )
                                 }
                             }
                         ) { padding ->
@@ -1073,8 +1177,16 @@ fun RadialMenuOverlay(viewModel: DailyViewModel, entryId: String, theme: DailyTi
     val scope = rememberCoroutineScope()
 
     // 动画控制
-    val scale by animateFloatAsState(targetValue = if (isVisible) 1f else 0.5f, animationSpec = tween(300, easing = EaseOutBack), label = "scale")
-    val alpha by animateFloatAsState(targetValue = if (isVisible) 1f else 0f, animationSpec = tween(250), label = "alpha")
+    val scale by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0.5f,
+        animationSpec = tween(300, easing = EaseOutBack),
+        label = "scale"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0f,
+        animationSpec = tween(250),
+        label = "alpha"
+    )
 
     val dismiss = {
         isVisible = false
@@ -1088,7 +1200,11 @@ fun RadialMenuOverlay(viewModel: DailyViewModel, entryId: String, theme: DailyTi
             .fillMaxSize()
             .zIndex(100f)
             .background(Color.Black.copy(alpha = 0.5f * alpha)) // 半黑背景跟随透明度渐变
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = dismiss),
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = dismiss
+            ),
         contentAlignment = Alignment.Center
     ) {
         val clipboardManager = LocalClipboardManager.current
@@ -1109,16 +1225,31 @@ fun RadialMenuOverlay(viewModel: DailyViewModel, entryId: String, theme: DailyTi
             }
 
             val actions = listOf(
-                Triple(Icons.Filled.SubdirectoryArrowRight, "Move") { dismiss(); viewModel.selectEntry(entryId); viewModel.showSelectSpaceM = true },
-                Triple(Icons.Filled.Link, "Bind") { dismiss(); viewModel.startBindingMode(entryId) },
-                Triple(Icons.Filled.LinkOff, "Unbind") { dismiss(); viewModel.unbindEntryFromGroup(entryId) },
+                Triple(
+                    Icons.Filled.SubdirectoryArrowRight,
+                    "Move"
+                ) { dismiss(); viewModel.selectEntry(entryId); viewModel.showSelectSpaceM = true },
+                Triple(
+                    Icons.Filled.Link,
+                    "Bind"
+                ) { dismiss(); viewModel.startBindingMode(entryId) },
+                Triple(Icons.Filled.LinkOff, "Unbind") {
+                    dismiss(); viewModel.unbindEntryFromGroup(
+                    entryId
+                )
+                },
                 Triple(Icons.Filled.ContentCopy, "Copy") {
-                    val entry = viewModel.getEntryFromId(entryId)
-                    if (entry != null) {
-                        val txt = "${FullDateFormat.format(Date(entry.timestamp))}\n" + (if (entry.title.isNullOrBlank()) "" else "【${entry.title}】\n") + entry.content
-                        clipboardManager.setText(AnnotatedString(txt))
-                        viewModel.toastOut("日记已复制")
-                    }
+                    // [修改3] 合并批量操作的复制
+                    val isBatch = viewModel.isBatchManaging && viewModel.batchEntries.isNotEmpty()
+                    val entriesToCopy =
+                        if (isBatch) viewModel.batchEntries.toList() else listOf(entryId)
+                    val txt = entriesToCopy.mapNotNull { viewModel.getEntryFromId(it) }
+                        .joinToString("\n===\n") { entry ->
+                            "${FullDateFormat.format(Date(entry.timestamp))}\n" + (if (entry.title.isNullOrBlank()) "" else "【${entry.title}】\n") + entry.content
+                        }
+                    clipboardManager.setText(AnnotatedString(txt))
+                    viewModel.toastOut(if (isBatch) "已复制选中的 ${entriesToCopy.size} 条记录" else "日记已复制")
+                    if (isBatch) viewModel.stopBatchSelecting()
                     dismiss()
                 }
             )
@@ -1136,12 +1267,18 @@ fun RadialMenuOverlay(viewModel: DailyViewModel, entryId: String, theme: DailyTi
                 IconButton(
                     onClick = onClick,
                     modifier = Modifier
-                        .offset(x = with(LocalDensity.current) { offsetX.toDp() }, y = with(LocalDensity.current) { offsetY.toDp() })
+                        .offset(
+                            x = with(LocalDensity.current) { offsetX.toDp() },
+                            y = with(LocalDensity.current) { offsetY.toDp() })
                         .size(56.dp)
                         .clip(CircleShape)
                         .background(theme.primaryColor)
                 ) {
-                    Icon(imageVector = icon, contentDescription = label, tint = theme.backgroundColor)
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = label,
+                        tint = theme.backgroundColor
+                    )
                 }
             }
         }
@@ -1159,13 +1296,10 @@ fun DiaryCard(
 
     // 未来添加音频视频，只需在这里加 EntryType.AUDIO -> AudioDiaryCard(...)
     when (entry.type) {
-        EntryType.TEXT -> {
-            TextDiaryCard(entry, viewModel, haptic, cardModifier)
-        }
-
-        EntryType.IMAGE -> {
-            ImageDiaryCard(entry, viewModel, haptic, cardModifier)
-        }
+        EntryType.TEXT -> TextDiaryCard(entry, viewModel, haptic, cardModifier)
+        EntryType.IMAGE -> ImageDiaryCard(entry, viewModel, haptic, cardModifier)
+        EntryType.AUDIO -> AudioDiaryCard(entry, viewModel, haptic, cardModifier) // [修改1]
+        EntryType.RECORD -> RecordDiaryCard(entry, viewModel, haptic, cardModifier) // [修改11]
     }
 }
 
@@ -1193,13 +1327,14 @@ private fun TextDiaryCard(
             if (!entry.title.isNullOrBlank()) {
                 Text(
                     text = getHighlightedText(entry.title, query, highlightColor, isTitle = true),
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleLarge.copy( // 突出显示
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 22.sp,
                         color = getTextColor(false)
                     ),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    modifier = Modifier.padding(bottom = 6.dp)
                 )
             }
             // 正文渲染：智能截断居中并高亮
@@ -1213,11 +1348,111 @@ private fun TextDiaryCard(
                 ),
                 style = MaterialTheme.typography.bodyMedium.copy(
                     lineHeight = 20.sp,
-                    color = getTextColor(false).copy(alpha = if (entry.title.isNullOrBlank()) 1f else 0.8f)
+                    color = getTextColor(false).copy(alpha = if (entry.title.isNullOrBlank()) 1f else 0.8f),
+                    lineBreak = LineBreak(
+                        strategy = LineBreak.Strategy.HighQuality,
+                        strictness = LineBreak.Strictness.Default,
+                        wordBreak = LineBreak.WordBreak.Phrase
+                    ) // 允许切词截断
                 ),
                 maxLines = if (!entry.title.isNullOrBlank()) 8 else 7,
                 overflow = TextOverflow.Ellipsis,
                 fontWeight = if (entry.title.isNullOrBlank()) FontWeight.Bold else FontWeight.Normal
+            )
+        }
+    }
+}
+
+// [新增] Audio 卡片
+@Composable
+private fun AudioDiaryCard(
+    entry: DailyEntry,
+    viewModel: DailyViewModel,
+    haptic: HapticFeedback,
+    modifier: Modifier
+) {
+    var isPlaying by remember { mutableStateOf(false) }
+    val mediaPlayer = remember { MediaPlayer() }
+    val theme = viewModel.getThemeBySpace()
+
+    DisposableEffect(entry.content) {
+        try {
+            mediaPlayer.setDataSource(viewModel.getFullImagePath(entry.content).absolutePath)
+            mediaPlayer.prepare()
+            mediaPlayer.setOnCompletionListener { isPlaying = false }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        onDispose { mediaPlayer.release() }
+    }
+
+    Box(
+        modifier = modifier
+            .width(220.dp)
+            .diaryGestures(entry.id, viewModel, haptic) {}) {
+        GlassmorphismBackground(modifier = Modifier.matchParentSize())
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = {
+                    if (isPlaying) mediaPlayer.pause() else mediaPlayer.start()
+                    isPlaying = !isPlaying
+                },
+                modifier = Modifier
+                    .background(theme.primaryColor, CircleShape)
+                    .size(48.dp)
+            ) {
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = "Play/Pause", tint = theme.backgroundColor
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = entry.title ?: "Audio File",
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                color = getTextColor(false),
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+// [新增] Record 卡片概览
+// [修改] 修复主页里 Record 卡片点击无反应的问题
+@Composable
+private fun RecordDiaryCard(
+    entry: DailyEntry,
+    viewModel: DailyViewModel,
+    haptic: HapticFeedback,
+    modifier: Modifier
+) {
+    val theme = viewModel.getThemeBySpace()
+    Box(modifier = modifier
+        .widthIn(max = 220.dp)
+        .diaryGestures(entry.id, viewModel, haptic) {
+            // [修复] 使用可靠的 viewModel 方法跳转
+            viewModel.navigateToRecord(entry.id)
+        }) {
+        GlassmorphismBackground(modifier = Modifier.matchParentSize(), alpha = 0.8f)
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "Entire Day Record",
+                color = theme.primaryColor,
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 18.sp
+            )
+            Spacer(Modifier.height(8.dp))
+            val data = try {
+                kotlinx.serialization.json.Json.decodeFromString<com.roroi.taplog.daily.viewmodel.RecordDayData>(
+                    entry.content
+                )
+            } catch (_: Exception) {
+                com.roroi.taplog.daily.viewmodel.RecordDayData()
+            }
+            Text(
+                "${data.events.size} Events Logged",
+                style = MaterialTheme.typography.bodySmall,
+                color = getTextColor(false)
             )
         }
     }
@@ -1439,57 +1674,42 @@ fun MoveEntryTo(
 fun AddFAB(
     currentTheme: DailyTimeTheme,
     viewModel: DailyViewModel,
-    isExpanded: MutableState<Boolean>
+    isExpanded: MutableState<Boolean>,
+    onAudioClick: () -> Unit
 ) {
     val animLong = 200
-    // 定义动画参数
     val containerWidth by animateDpAsState(
         targetValue = if (isExpanded.value) 135.dp else 56.dp,
         animationSpec = tween(animLong, easing = EaseOutSine)
     )
     val containerHeight by animateDpAsState(
-        targetValue = if (isExpanded.value) 135.dp else 56.dp,
+        targetValue = if (isExpanded.value) 135.dp else 56.dp, // [修改11] 增高
         animationSpec = tween(animLong, easing = EaseOutSine)
     )
     val cornerSize by animateDpAsState(
-        targetValue = if (isExpanded.value) 16.dp else 28.dp, // 从圆滑变稍微方一点
+        targetValue = if (isExpanded.value) 16.dp else 28.dp,
         animationSpec = tween(animLong)
     )
-
     val onPrimaryColor = currentTheme.backgroundColor
 
     Box(
         modifier = Modifier
-            .size(width = containerWidth, height = containerHeight) // FAB 的标准尺寸
-            // (A) 阴影：必须放在 clip 和 background 之前，否则阴影会被剪掉
+            .size(width = containerWidth, height = containerHeight)
             .graphicsLayer {
-                shadowElevation = 6.dp.toPx() // FAB 默认高度
-                shape = RoundedCornerShape(cornerSize)
-                clip = false // 允许阴影溢出显示
+                shadowElevation = 6.dp.toPx(); shape = RoundedCornerShape(cornerSize); clip = false
             }
             .clip(RoundedCornerShape(cornerSize))
             .background(currentTheme.primaryColor)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
-                indication = null, onClick = {
-                    isExpanded.value = true
-                }), // 使用主题色
-        contentAlignment = Alignment.Center
+                indication = null,
+                onClick = { isExpanded.value = true }), contentAlignment = Alignment.Center
     ) {
-        if (!isExpanded.value) {
-            Icon(
-                Icons.Default.Add,
-                contentDescription = "Add",
-                tint = onPrimaryColor // 保持图标颜色一致
-            )
-        } else {
-            Column(modifier = Modifier.padding(8.dp)) {
+        if (!isExpanded.value) Icon(Icons.Default.Add, null, tint = onPrimaryColor)
+        else {
+            LazyColumn(modifier = Modifier.padding(8.dp)) {
                 @Composable
-                fun OptionItem(
-                    icon: ImageVector,
-                    text: String,
-                    onClick: () -> Unit
-                ) {
+                fun OptionItem(icon: ImageVector, text: String, onClick: () -> Unit) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1512,20 +1732,34 @@ fun AddFAB(
                         )
                     }
                 }
-
-                OptionItem(Icons.Default.Edit, "Daily") {
-                    isExpanded.value = false
-                    viewModel.navigateToEditor(null)
-                }
-                // 方案 B：使用系统自带的分割线组件（推荐）
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    thickness = 1.dp,
-                    color = onPrimaryColor.copy(alpha = 0.2f)
-                )
-                OptionItem(Icons.Default.AccountBox, "Photo") {
-                    isExpanded.value = false
-                    viewModel.navigateToImagePicker()
+                item {
+                    OptionItem(Icons.Default.Edit, "Daily") {
+                        isExpanded.value = false; viewModel.navigateToEditor(null)
+                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        thickness = 1.dp,
+                        color = onPrimaryColor.copy(alpha = 0.2f)
+                    )
+                    OptionItem(Icons.Default.AccountBox, "Photo") {
+                        isExpanded.value = false; viewModel.navigateToImagePicker()
+                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        thickness = 1.dp,
+                        color = onPrimaryColor.copy(alpha = 0.2f)
+                    )
+                    OptionItem(Icons.Default.LibraryMusic, "Audio") {
+                        isExpanded.value = false; onAudioClick()
+                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        thickness = 1.dp,
+                        color = onPrimaryColor.copy(alpha = 0.2f)
+                    )
+                    OptionItem(Icons.Default.Timeline, "Record") {
+                        isExpanded.value = false; viewModel.openRecordDay()
+                    }
                 }
             }
         }
@@ -1611,10 +1845,16 @@ fun NormalTopBar(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .padding(vertical = 2.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { scope.launch { listState.scrollToItem(0) } })
+                    // [修改4] 长按进入批量模式
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onLongPress = {
+                                scope.launch { leftDrawerState.close() }
+                                viewModel.startBatchSelecting()
+                            },
+                            onTap = { scope.launch { listState.scrollToItem(0) } }
+                        )
+                    }
             ) {
                 Text(
                     text = (if (viewModel.searchQuery.isBlank()) FullDateFormat else HalfFullDateFormat).format(

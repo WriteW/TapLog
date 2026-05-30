@@ -24,23 +24,28 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.automirrored.filled.Input
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Output
 import androidx.compose.material.icons.filled.Password
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -60,6 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -87,10 +93,6 @@ import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.util.Date
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Close
 
 data class NavModuleItem(
     val name: String,
@@ -313,17 +315,16 @@ fun LeftSidebarContent(
     } else {
         hazeModifier.background(theme.backgroundColor)
     }
-    LazyColumn {
-        item {
-            ModalDrawerSheet(
-                drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
-                drawerContainerColor = Color.Transparent,
-                drawerContentColor = theme.onSurfaceColor,
-                modifier = hazeModifier
-                    .width(300.dp)
-            ) {
-
-                LeftSidebarHeader(theme)
+    ModalDrawerSheet(
+        drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+        drawerContainerColor = Color.Transparent,
+        drawerContentColor = theme.onSurfaceColor,
+        modifier = hazeModifier
+            .width(300.dp)
+    ) {
+        LeftSidebarHeader(theme)
+        LazyColumn {
+            item {
                 LeftSidebarActions(viewModel, onExport, onImport)
                 HorizontalDivider(modifier = Modifier.padding(vertical = 24.dp, horizontal = 28.dp))
 
@@ -356,24 +357,42 @@ fun LeftSideSpaceEditor(viewModel: DailyViewModel?) {
     val currentSpace = viewModel?.getSpaceFromId(viewModel.selectedDSpaceId)
 
     NavigationDrawerItem(
-        label = {
-            Text(
-                "Change Password",
-                color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
-            )
-        },
+        label = { Text("Change Password", color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray) },
         selected = false,
-        onClick = {
-            viewModel?.showChangePassword = true
-        },
-        icon = {
-            Icon(
-                Icons.Default.Password,
-                "change password",
-                tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
-            )
-        }
+        onClick = { viewModel?.showChangePassword = true },
+        icon = { Icon(Icons.Default.Password, "change password", tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray) }
     )
+
+    // [修改5] 不加密图片切换开关
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Encrypt Images", color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray)
+        Spacer(modifier = Modifier.weight(1f))
+        Switch(
+            checked = currentSpace?.encryptImages ?: true,
+            onCheckedChange = { checked ->
+                currentSpace?.let {
+                    viewModel.changeSpaceP(it.copy(encryptImages = checked))
+                }
+            }
+        )
+    }
+    // [新增：音频加密开关]
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text("Encrypt Audio", color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray)
+        Spacer(modifier = Modifier.weight(1f))
+        Switch(
+            checked = currentSpace?.encryptAudio ?: true,
+            onCheckedChange = { checked ->
+                currentSpace?.let { viewModel.changeSpaceP(it.copy(encryptAudio = checked)) }
+            }
+        )
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -462,25 +481,6 @@ fun LeftSidebarActions(viewModel: DailyViewModel?, onExport: () -> Unit, onImpor
                 tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
             )
         })
-    NavigationDrawerItem(
-        label = {
-            Text(
-                "Batch Manage",
-                color = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
-            )
-        },
-        selected = false,
-        onClick = {
-            viewModel?.startBatchSelecting()
-        },
-        icon = {
-            Icon(
-                Icons.Default.Menu,
-                "batch manage",
-                tint = viewModel?.getThemeBySpace()?.onSurfaceColor ?: Color.Gray
-            )
-        }
-    )
     if (viewModel != null) {
         val theme = viewModel.getThemeBySpace()
         Row(
@@ -695,9 +695,11 @@ fun RightSidebarGroupItem(
                 val currentFlatIndex = startIndex + subIndex + 1
                 val isCurrentSubItemRight = currentFlatIndex % 2 == 0
 
-                Row(modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                ) {
                     if (!isCurrentSubItemRight) {
                         Box(
                             modifier = Modifier
@@ -776,9 +778,70 @@ fun CompactDiaryCard(
     when (entry.type) {
         EntryType.TEXT -> CompactTextCard(entry, viewModel)
         EntryType.IMAGE -> CompactImageCard(entry, viewModel)
+        EntryType.AUDIO -> CompactAudioCard(entry, viewModel)
+        EntryType.RECORD -> CompactRecordCard(entry, viewModel)
+    }
+}
+// [新增] 音频类型的侧边栏微缩卡片
+@Composable
+private fun CompactAudioCard(entry: DailyEntry, viewModel: DailyViewModel) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.5f))
+            .padding(12.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Default.LibraryMusic,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = getTextColor(false)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = entry.title ?: "Audio File",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = getTextColor(false)
+            )
+        }
     }
 }
 
+// [新增] 整日记录类型的侧边栏微缩卡片
+@Composable
+private fun CompactRecordCard(entry: DailyEntry, viewModel: DailyViewModel) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable {
+                // [修复] 使用可靠的方法跳转
+                viewModel.navigateToRecord(entry.id)
+            }
+    ) {
+        com.roroi.taplog.daily.GlassmorphismBackground(modifier = Modifier.matchParentSize())
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Timeline,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = getTextColor(false)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Day Record",
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                color = getTextColor(false)
+            )
+        }
+    }
+}
 @Composable
 private fun CompactTextCard(entry: DailyEntry, viewModel: DailyViewModel) {
     Box(
