@@ -31,6 +31,16 @@ import com.roroi.taplog.daily.viewmodel.RecordEvent
 import kotlinx.serialization.json.Json
 import java.util.Calendar
 
+// 根据事件名称生成固定的优美色彩
+fun getEventColor(name: String, fallback: Color): Color {
+    if (name == "🛏️") return Color(0xFF5C6BC0)
+    if (name == "💻") return Color(0xFFEF5350)
+    if (name == "🎮") return Color(0xFF66BB6A)
+    val hash = name.hashCode()
+    val hue = abs(hash % 360).toFloat()
+    return Color.hsv(hue, 0.65f, 0.9f)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit) {
@@ -49,6 +59,25 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
 
     var showStopDialog by remember { mutableStateOf(false) }
     var showAddEventDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) } // [新增] 删除弹窗状态
+    var localCustomEvents by remember { mutableStateOf(listOf<String>()) } // [新增] 临时保存列表，实现立即展示
+
+    // [新增] 删除整条记录弹窗
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("删除记录", color = Color.Red, fontWeight = FontWeight.Bold) },
+            text = { Text("确定要彻底删除这一整天的所有记录吗？此操作无法恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteDialog = false
+                    viewModel.deleteEntry(recordId) // 删除数据
+                    onBack() // 退出页面
+                }) { Text("永久删除", color = Color.Red) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("取消") } }
+        )
+    }
 
     if (showStopDialog) {
         AlertDialog(
@@ -58,7 +87,6 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
             confirmButton = {
                 TextButton(onClick = {
                     showStopDialog = false
-                    // 强制停止所有尚未结束的事件
                     val stoppedEvents = data.events.map { if (it.endTime == null) it.copy(endTime = System.currentTimeMillis()) else it }
                     saveData(data.copy(events = stoppedEvents, isStopped = true))
                     onBack()
@@ -83,22 +111,17 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                 Button(onClick = {
                     val trimmedInput = input.trim()
                     if (trimmedInput.isNotBlank()) {
-                        // 1. 如果在空间内，永久保存到该 Space 的 LazyRow 快捷选项中
                         if (space != null && !space.customRecordEvents.contains(trimmedInput)) {
                             val newSpace = space.copy(customRecordEvents = space.customRecordEvents + trimmedInput)
                             viewModel.changeSpaceP(newSpace)
                         }
-                        
-                        // 2. 修复核心问题：立即触发并在时间轴上开始记录这个新添加的事件！
-                        saveData(data.copy(
-                            events = data.events + RecordEvent(
-                                startTime = System.currentTimeMillis(), 
-                                iconOrText = trimmedInput
-                            )
-                        ))
+                        // [修改] 仅添加到UI缓存展示，不再调用 saveData 自动开始
+                        if (!localCustomEvents.contains(trimmedInput)) {
+                            localCustomEvents = localCustomEvents + trimmedInput
+                        }
                     }
                     showAddEventDialog = false
-                }) { Text("保存并开始") }
+                }) { Text("保存") }
             },
             dismissButton = { TextButton(onClick = { showAddEventDialog = false }) { Text("取消") } }
         )
@@ -143,16 +166,13 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                             Spacer(modifier = Modifier.height(12.dp))
                             
                             val defaultEvents = listOf("🛏️" to "Rest", "💻" to "Work", "🎮" to "Play")
-                            
-                            // [修复]: 实时从 data.events 提取已使用的自定义事件，并结合 Space 中保存的事件
-                            // 这样无论数据库是否来得及刷新，甚至在没有 Space 的主空间，LazyRow 也会瞬间更新！
                             val historyIcons = data.events.map { it.iconOrText }.filter { it.isNotBlank() }
                             val spaceIcons = space?.customRecordEvents ?: emptyList()
                             
-                            val customEvents = (spaceIcons + historyIcons)
+                            val customEvents = (spaceIcons + historyIcons + localCustomEvents)
                                 .distinct()
-                                .filter { icon -> defaultEvents.none { it.first == icon } } // 排除与默认重合的图标
-                                .map { it to it } // Label直接使用图标本身
+                                .filter { icon -> defaultEvents.none { it.first == icon } }
+                                .map { it to it }
 
                             val allEvents = defaultEvents + customEvents
 
@@ -163,18 +183,19 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                             ) {
                                 items(allEvents) { (icon, label) ->
                                     val isOngoing = data.events.any { it.iconOrText == icon && it.endTime == null }
+                                    // [修改] 获取专属随机色
+                                    val eventColor = remember(icon) { getEventColor(icon, theme.primaryColor) }
+                                    
                                     EventButton(
                                         icon = icon, label = label,
-                                        activeColor = if (isOngoing) Color(0xFFFF5252) else theme.primaryColor, // 正在运行显示红色的警告底色
+                                        activeColor = eventColor,
                                         isOngoing = isOngoing,
                                         onClick = {
                                             val ongoingEvent = data.events.find { it.iconOrText == icon && it.endTime == null }
                                             if (ongoingEvent != null) {
-                                                // 点击已激活事件：停止它
                                                 val updated = data.events.map { if (it.id == ongoingEvent.id) it.copy(endTime = System.currentTimeMillis()) else it }
                                                 saveData(data.copy(events = updated))
                                             } else {
-                                                // 点击未激活事件：开始它
                                                 saveData(data.copy(events = data.events + RecordEvent(startTime = System.currentTimeMillis(), iconOrText = icon)))
                                             }
                                         }
@@ -210,7 +231,8 @@ fun EventButton(icon: String, label: String, activeColor: Color, isOngoing: Bool
         modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(8.dp)
     ) {
         Box(
-            modifier = Modifier.size(48.dp).background(if (isOngoing) activeColor.copy(alpha = 0.2f) else Color.White, CircleShape),
+            // [修改] 激活时背景变为专属颜色的 alpha = 0.5f
+            modifier = Modifier.size(48.dp).background(if (isOngoing) activeColor.copy(alpha = 0.5f) else Color.White, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Text(icon, fontSize = 24.sp)
@@ -238,23 +260,26 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, activeColor: Color
             timeInMillis = entryTimestamp; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }.timeInMillis
 
-        val startX = 60.dp.toPx()
+        // [修改] 加大左侧文字与线条的距离，防止挤压
+        val startX = 76.dp.toPx() 
         val endX = canvasW - 40.dp.toPx()
-        // 获取所有唯一类型的Event，便于计算在宽带内堆叠时的Y轴偏移以避免完全重合
         val distinctEvents = data.events.map { it.iconOrText }.distinct()
+        
+        // [修改] 将线宽增加到 24dp
+        val strokeW = 24.dp.toPx()
 
         // 绘制宽轨道背景线
         for (i in 0..3) {
             val y = lineSpacing * (i + 1)
             drawContext.canvas.nativeCanvas.drawText(
                 "${String.format("%02d", i * 6)}:00",
-                16.dp.toPx(), y + 4.dp.toPx(),
+                12.dp.toPx(), y + 4.dp.toPx(), // 文字靠左
                 android.graphics.Paint().apply { color = android.graphics.Color.DKGRAY; textSize = 12.sp.toPx(); typeface = android.graphics.Typeface.DEFAULT_BOLD; textAlign = android.graphics.Paint.Align.LEFT }
             )
             drawLine(
                 color = bgColor.copy(alpha = 0.4f + (i * 0.1f)),
                 start = Offset(startX, y), end = Offset(endX, y),
-                strokeWidth = 28.dp.toPx(), // 加宽的背景跑道，容纳多条并行线
+                strokeWidth = strokeW,
                 cap = StrokeCap.Round
             )
         }
@@ -264,52 +289,58 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, activeColor: Color
         fun getX(progress: Float): Float = startX + (endX - startX) * ((progress * 4) - getSection(progress))
         fun getY(section: Int): Float = lineSpacing * (section + 1)
 
-        fun drawActiveBlock(startMillis: Long, endMillis: Long, yOffset: Float, isOngoing: Boolean) {
+        fun drawActiveBlock(startMillis: Long, endMillis: Long, eventColor: Color, eventIndex: Int, isOngoing: Boolean) {
             val startP = getProgress(startMillis)
             val endP = getProgress(endMillis)
             if (startP >= endP && !isOngoing) return
             
             val s = getSection(startP)
             val e = getSection(endP)
-            val strokeW = 6.dp.toPx() // 细一点的线条放入宽跑道内
+            
+            // [核心修改] 并发渲染算法：使用 DashPathEffect 使同段线条呈现颜色交替的斑马纹条带，完美融合！
+            // 第一个事件实线，后面的事件用虚线叠加，产生交织的一条粗线。
+            val pathEffect = if (eventIndex == 0) null else PathEffect.dashPath(floatArrayOf(40f, 40f), (eventIndex * 20f))
             
             if (s == e) {
-                drawLine(activeColor, Offset(getX(startP), getY(s) + yOffset), Offset(getX(endP), getY(e) + yOffset), strokeWidth = strokeW, cap = StrokeCap.Round)
+                drawLine(eventColor, Offset(getX(startP), getY(s)), Offset(getX(endP), getY(e)), strokeWidth = strokeW, cap = StrokeCap.Round, pathEffect = pathEffect)
             } else {
-                drawLine(activeColor, Offset(getX(startP), getY(s) + yOffset), Offset(endX, getY(s) + yOffset), strokeWidth = strokeW, cap = StrokeCap.Round)
-                for (i in (s + 1) until e) drawLine(activeColor, Offset(startX, getY(i) + yOffset), Offset(endX, getY(i) + yOffset), strokeWidth = strokeW, cap = StrokeCap.Round)
-                drawLine(activeColor, Offset(startX, getY(e) + yOffset), Offset(getX(endP), getY(e) + yOffset), strokeWidth = strokeW, cap = StrokeCap.Round)
+                drawLine(eventColor, Offset(getX(startP), getY(s)), Offset(endX, getY(s)), strokeWidth = strokeW, cap = StrokeCap.Round, pathEffect = pathEffect)
+                for (i in (s + 1) until e) drawLine(eventColor, Offset(startX, getY(i)), Offset(endX, getY(i)), strokeWidth = strokeW, cap = StrokeCap.Round, pathEffect = pathEffect)
+                drawLine(eventColor, Offset(startX, getY(e)), Offset(getX(endP), getY(e)), strokeWidth = strokeW, cap = StrokeCap.Round, pathEffect = pathEffect)
             }
             
-            // 绘制起点白心点
-            drawCircle(Color.White, radius = 5.dp.toPx(), center = Offset(getX(startP), getY(s) + yOffset))
-            drawCircle(activeColor, radius = 3.dp.toPx(), center = Offset(getX(startP), getY(s) + yOffset))
+            // [修改] 绘制起点端点：加粗白边距，使紧挨着的点界限分明
+            drawCircle(Color.White, radius = 9.dp.toPx(), center = Offset(getX(startP), getY(s)))
+            drawCircle(eventColor, radius = 5.dp.toPx(), center = Offset(getX(startP), getY(s)))
             
-            // 绘制终点 (或者是脉冲动画)
-            val endPoint = Offset(getX(endP), getY(e) + yOffset)
+            val endPoint = Offset(getX(endP), getY(e))
             if (!isOngoing) {
-                drawCircle(Color.White, radius = 5.dp.toPx(), center = endPoint)
-                drawCircle(activeColor, radius = 3.dp.toPx(), center = endPoint)
+                drawCircle(Color.White, radius = 9.dp.toPx(), center = endPoint)
+                drawCircle(eventColor, radius = 5.dp.toPx(), center = endPoint)
             } else {
-                drawCircle(Color.White.copy(alpha = pulseAlpha), radius = 8.dp.toPx(), center = endPoint)
-                drawCircle(Color.Red, radius = 4.dp.toPx(), center = endPoint)
+                drawCircle(Color.White.copy(alpha = pulseAlpha), radius = 12.dp.toPx(), center = endPoint)
+                drawCircle(Color.Red, radius = 6.dp.toPx(), center = endPoint)
             }
         }
 
         for (event in data.events) {
-            // 根据事件类型的索引，计算错开的 Y 轴距离（-8dp, 0dp, 8dp循环），实现平行轨道效果
             val eventIndex = distinctEvents.indexOf(event.iconOrText)
-            val yOffset = ((eventIndex % 3) - 1) * 8.dp.toPx()
-            
             val isOngoing = event.endTime == null && !data.isStopped
             val calculateEnd = event.endTime ?: currentMillis
-
-            drawActiveBlock(event.startTime, calculateEnd, yOffset, isOngoing)
             
-            // 起点文字 Emoji 漂浮在轨道上方
+            // 获取该事件专属颜色
+            val eventColor = getEventColor(event.iconOrText, activeColor)
+
+            drawActiveBlock(event.startTime, calculateEnd, eventColor, eventIndex, isOngoing)
+            
+            // [修改] Emoji 上下左右交错排列算法
+            // 偶数在上方，奇数在下方
+            val isUp = eventIndex % 2 == 0
+            val iconYOffset = if (isUp) -24.dp.toPx() else 36.dp.toPx() // 下方的稍微多留点给粗线
+
             drawContext.canvas.nativeCanvas.drawText(
-                event.iconOrText, getX(getProgress(event.startTime)), getY(getSection(getProgress(event.startTime))) + yOffset - 8.dp.toPx(),
-                android.graphics.Paint().apply { textSize = 16.sp.toPx(); textAlign = android.graphics.Paint.Align.CENTER }
+                event.iconOrText, getX(getProgress(event.startTime)), getY(getSection(getProgress(event.startTime))) + iconYOffset,
+                android.graphics.Paint().apply { textSize = 18.sp.toPx(); textAlign = android.graphics.Paint.Align.CENTER }
             )
         }
     }

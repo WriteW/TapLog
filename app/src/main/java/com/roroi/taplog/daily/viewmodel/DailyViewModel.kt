@@ -21,6 +21,9 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.Calendar
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.material.icons.filled.Delete
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sin
 
