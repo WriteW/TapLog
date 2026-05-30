@@ -143,7 +143,17 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                             Spacer(modifier = Modifier.height(12.dp))
                             
                             val defaultEvents = listOf("🛏️" to "Rest", "💻" to "Work", "🎮" to "Play")
-                            val customEvents = space?.customRecordEvents?.map { it to it } ?: emptyList()
+                            
+                            // [修复]: 实时从 data.events 提取已使用的自定义事件，并结合 Space 中保存的事件
+                            // 这样无论数据库是否来得及刷新，甚至在没有 Space 的主空间，LazyRow 也会瞬间更新！
+                            val historyIcons = data.events.map { it.iconOrText }.filter { it.isNotBlank() }
+                            val spaceIcons = space?.customRecordEvents ?: emptyList()
+                            
+                            val customEvents = (spaceIcons + historyIcons)
+                                .distinct()
+                                .filter { icon -> defaultEvents.none { it.first == icon } } // 排除与默认重合的图标
+                                .map { it to it } // Label直接使用图标本身
+
                             val allEvents = defaultEvents + customEvents
 
                             LazyRow(
