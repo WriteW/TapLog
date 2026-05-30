@@ -20,7 +20,9 @@ data class RecordEvent(
 @Serializable
 data class RecordDayData(
     val events: List<RecordEvent> = emptyList(),
-    val isStopped: Boolean = false
+    val isStopped: Boolean = false,
+    // 👇 [新增这一行] 用来把按钮配置和当天的记录绑在一起保存
+    val customEvents: List<String> = emptyList()
 )
 
 @Serializable
