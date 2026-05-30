@@ -87,8 +87,7 @@ fun getEventColor(name: String): Color {
 @Composable
 fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit) {
     val theme = viewModel.getThemeBySpace()
-
-    // [修复重点 1] 将 entry 和 space 转换为动态状态，防止连续修改时旧数据覆盖新数据
+    
     val initialEntry = viewModel.getEntryFromId(recordId) ?: return
     var currentEntry by remember { mutableStateOf(initialEntry) }
     var currentSpace by remember { mutableStateOf(viewModel.getSpaceFromId(viewModel.selectedDSpaceId)) }
@@ -103,7 +102,6 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
         )
     }
 
-    // [修复重点 2] 保存时，同步更新 currentEntry 的内存状态，保证下次也是最新鲜的
     val saveData = { newData: RecordDayData ->
         data = newData
         val updatedEntry = currentEntry.copy(content = Json.encodeToString(newData))
@@ -114,10 +112,8 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
     var showStopDialog by remember { mutableStateOf(false) }
     var showAddEventDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var localCustomEvents by remember { mutableStateOf(listOf<String>()) }
     var showMoreMenu by remember { mutableStateOf(false) }
 
-    // 存储正在编辑的事件数据 Pair<旧图标, 旧说明>
     var editEventData by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     if (showDeleteDialog) {
@@ -153,6 +149,7 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
         )
     }
 
+    // 【修复核心1】：添加事件时，不仅存入 Space，也存入当天数据
     if (showAddEventDialog) {
         var iconInput by remember { mutableStateOf("") }
         var descInput by remember { mutableStateOf("") }
@@ -171,17 +168,18 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                     val trimmedDesc = descInput.trim()
                     if (trimmedIcon.isNotBlank()) {
                         val combinedString = if (trimmedDesc.isNotBlank()) "$trimmedIcon|$trimmedDesc" else trimmedIcon
-
-                        // [修复重点 3] 基于 currentSpace 操作，并在操作后更新它
+                        
+                        // 1. 如果在某个空间里，存进空间全局配置
                         currentSpace?.let { spaceVal ->
                             val filteredList = spaceVal.customRecordEvents.filterNot { it == trimmedIcon || it.startsWith("$trimmedIcon|") }
                             val updatedSpace = spaceVal.copy(customRecordEvents = filteredList + combinedString)
                             viewModel.changeSpaceP(updatedSpace)
                             currentSpace = updatedSpace
                         }
-
-                        val filteredLocal = localCustomEvents.filterNot { it == trimmedIcon || it.startsWith("$trimmedIcon|") }
-                        localCustomEvents = filteredLocal + combinedString
+                        
+                        // 2. 无论在不在空间里，都存进当天的 RecordDayData 里（完美解决主空间为null的问题）
+                        val filteredDataEvents = data.customEvents.filterNot { it == trimmedIcon || it.startsWith("$trimmedIcon|") }
+                        saveData(data.copy(customEvents = filteredDataEvents + combinedString))
                     }
                     showAddEventDialog = false
                 }) { Text("保存") }
@@ -190,6 +188,7 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
         )
     }
 
+    // 【修复核心2】：编辑事件时，同步更新当天数据并持久化
     if (editEventData != null) {
         val (oldIcon, oldLabel) = editEventData!!
         var iconInput by remember { mutableStateOf(oldIcon) }
@@ -211,22 +210,25 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                     if (trimmedIcon.isNotBlank()) {
                         val combinedString = if (trimmedDesc.isNotBlank()) "$trimmedIcon|$trimmedDesc" else trimmedIcon
 
-                        // [修复重点 4] 编辑时，基于 currentSpace 操作并同步状态
                         currentSpace?.let { spaceVal ->
                             val filteredList = spaceVal.customRecordEvents.filterNot { it == oldIcon || it.startsWith("$oldIcon|") }
                             val updatedSpace = spaceVal.copy(customRecordEvents = filteredList + combinedString)
                             viewModel.changeSpaceP(updatedSpace)
-                            currentSpace = updatedSpace // 防止连续编辑时数据覆盖丢失
+                            currentSpace = updatedSpace 
+                        }
+                        
+                        // 将修改后的配置存进当天记录里
+                        val filteredDataEvents = data.customEvents.filterNot { it == oldIcon || it.startsWith("$oldIcon|") }
+                        val newCustomEvents = filteredDataEvents + combinedString
+
+                        val updatedEvents = if (oldIcon != trimmedIcon) {
+                            data.events.map { if (it.iconOrText == oldIcon) it.copy(iconOrText = trimmedIcon) else it }
+                        } else {
+                            data.events
                         }
 
-                        val filteredLocal = localCustomEvents.filterNot { it == oldIcon || it.startsWith("$oldIcon|") }
-                        localCustomEvents = filteredLocal + combinedString
-
-                        // 如果连图标也改了，同步更新时间轴历史数据
-                        if (oldIcon != trimmedIcon) {
-                            val updatedEvents = data.events.map { if (it.iconOrText == oldIcon) it.copy(iconOrText = trimmedIcon) else it }
-                            saveData(data.copy(events = updatedEvents))
-                        }
+                        // 一次性保存到数据库
+                        saveData(data.copy(customEvents = newCustomEvents, events = updatedEvents))
                     }
                     editEventData = null
                 }) { Text("保存修改") }
@@ -276,17 +278,20 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
 
                             val defaultEvents = listOf("🛏️" to "Rest", "💻" to "Work", "🎮" to "Play")
                             val historyIcons = data.events.map { it.iconOrText }.filter { it.isNotBlank() }
-                            // [修复重点 5] 读取由 mutableState 维护的最新的 currentSpace
+                            
                             val spaceIcons = currentSpace?.customRecordEvents ?: emptyList()
+                            // 【修复核心3】：提取出今天保存在数据库里的专属自定义按钮
+                            val dayIcons = data.customEvents
 
-                            val customEventsMap = (spaceIcons + localCustomEvents).associate { rawString ->
+                            // 将空间按钮和当天按钮合并解析
+                            val customEventsMap = (spaceIcons + dayIcons).associate { rawString ->
                                 val parts = rawString.split("|", limit = 2)
                                 parts[0] to parts.getOrElse(1) { parts[0] }
                             }
 
                             val combinedMap = mutableMapOf<String, String>()
                             defaultEvents.forEach { combinedMap[it.first] = it.second }
-                            customEventsMap.forEach { combinedMap[it.key] = it.value }
+                            customEventsMap.forEach { combinedMap[it.key] = it.value } 
                             historyIcons.forEach { if (!combinedMap.containsKey(it)) combinedMap[it] = it }
 
                             val allEvents = combinedMap.toList()
