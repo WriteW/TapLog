@@ -396,22 +396,19 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, primaryColor: Colo
         animationSpec = infiniteRepeatable(tween(1000, easing = FastOutSlowInEasing), RepeatMode.Reverse)
     )
 
-    // [新增 5] 浮窗选中事件的ID及点击区域收集器
     var selectedEventId by remember { mutableStateOf<String?>(null) }
     val hitBoxes = remember { mutableListOf<EventHitBox>() }
 
     Canvas(
         modifier = Modifier
             .fillMaxSize()
-            // 绑定点击事件，通过坐标找到点中的图标
             .pointerInput(data.events) {
                 detectTapGestures { offset ->
                     val hit = hitBoxes.find { offset.x in it.left..it.right && offset.y in it.top..it.bottom }
-                    selectedEventId = hit?.eventId // 如果没点中任何东西，则设为null隐藏浮窗
+                    selectedEventId = hit?.eventId
                 }
             }
     ) {
-        // 每次重新画的时候清空之前的碰撞体积
         hitBoxes.clear()
 
         val canvasW = size.width
@@ -429,7 +426,6 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, primaryColor: Colo
         val trackWidth = endX - startX
         val trackHeight = 28.dp.toPx()
         val cornerRadius = CornerRadius(8.dp.toPx(), 8.dp.toPx())
-        val distinctEvents = data.events.map { it.iconOrText }.distinct()
 
         for (i in 0..3) {
             val yCenter = lineSpacing * (i + 1)
@@ -483,14 +479,18 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, primaryColor: Colo
             }
         }
 
-        // 准备文字画笔
         val textPaint = android.graphics.Paint().apply {
             textSize = 18.sp.toPx()
             textAlign = android.graphics.Paint.Align.CENTER
+            isAntiAlias = true // 开启抗锯齿，让文字更清晰
         }
 
-        for (event in data.events) {
-            val eventIndex = distinctEvents.indexOf(event.iconOrText)
+        // ✅ 修复：计算文字基线偏移量，让文字真正垂直居中
+        val fontMetrics = textPaint.fontMetrics
+        val textBaselineOffset = (fontMetrics.ascent + fontMetrics.descent) / 2
+
+        // ✅ 修复：使用事件在列表中的实际索引
+        for ((eventIndex, event) in data.events.withIndex()) {
             val isOngoing = event.endTime == null && !data.isStopped
             val calculateEnd = event.endTime ?: currentMillis
             val eventColor = getEventColor(event.iconOrText)
@@ -498,14 +498,15 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, primaryColor: Colo
             drawActiveRect(event.startTime, calculateEnd, eventColor, isOngoing)
 
             val isUp = eventIndex % 2 == 0
-            val iconYOffset = if (isUp) -20.dp.toPx() else (trackHeight + 20.dp.toPx())
+            // ✅ 调整1：减小上下偏移量，让图标离时间轴更近
+            val iconYOffset = if (isUp) -14.dp.toPx() else (trackHeight + 14.dp.toPx())
             val startP = getProgress(event.startTime)
             val startSection = getSection(startP)
 
-            // [修改重点 6] 计算文字大小，并向右偏移宽度的一半
             val textWidth = textPaint.measureText(event.iconOrText)
             val textX = getX(startP) + textWidth / 2f
-            val textY = getYTop(startSection) + iconYOffset
+            // ✅ 调整2：应用基线偏移量，让文字真正居中
+            val textY = getYTop(startSection) + iconYOffset - textBaselineOffset
 
             drawContext.canvas.nativeCanvas.drawText(
                 event.iconOrText,
@@ -514,23 +515,23 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, primaryColor: Colo
                 textPaint
             )
 
-            // 收集该图标的碰撞检测框 (向四周延伸一点像素方便点击)
+            // ✅ 调整3：更新碰撞检测框的位置
             hitBoxes.add(
                 EventHitBox(
                     eventId = event.id,
                     left = textX - textWidth / 2 - 20f,
-                    top = textY - textPaint.textSize - 20f, // 文字的Y是底座，所以要往上找
+                    top = textY + fontMetrics.ascent - 10f, // 文字顶部
                     right = textX + textWidth / 2 + 20f,
-                    bottom = textY + 20f
+                    bottom = textY + fontMetrics.descent + 10f // 文字底部
                 )
             )
         }
 
-        // [新增 7] 绘制点击出来的浮窗提示
         if (selectedEventId != null) {
             val selectedEvent = data.events.find { it.id == selectedEventId }
             if (selectedEvent != null) {
-                val eventIndex = distinctEvents.indexOf(selectedEvent.iconOrText)
+                // ✅ 修复：使用事件在列表中的实际索引
+                val eventIndex = data.events.indexOf(selectedEvent)
                 val isUp = eventIndex % 2 == 0
                 val startP = getProgress(selectedEvent.startTime)
                 val startSection = getSection(startP)
@@ -538,14 +539,13 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, primaryColor: Colo
                 val textWidth = textPaint.measureText(selectedEvent.iconOrText)
                 val textX = getX(startP) + textWidth / 2f
 
-                // 根据图标方向反转浮窗方向（图标在上方，浮窗就在轨道下方）
+                // ✅ 调整4：相应调整浮窗位置，保持与图标相对位置正确
                 val tooltipYCenter = if (isUp) {
-                    getYTop(startSection) + trackHeight + 24.dp.toPx()
+                    getYTop(startSection) + trackHeight + 18.dp.toPx()
                 } else {
-                    getYTop(startSection) - 24.dp.toPx()
+                    getYTop(startSection) - 18.dp.toPx()
                 }
 
-                // 格式化时间字符串
                 val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
                 val startTimeStr = sdf.format(Date(selectedEvent.startTime))
                 val endTimeStr = if (selectedEvent.endTime != null) sdf.format(Date(selectedEvent.endTime)) else "Now"
@@ -559,7 +559,6 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, primaryColor: Colo
                 }
                 val timeWidth = tooltipPaint.measureText(timeString)
 
-                // 绘制浮窗黑色半透明背景
                 val bgWidth = timeWidth + 24.dp.toPx()
                 val bgHeight = 24.dp.toPx()
                 drawRoundRect(
@@ -569,11 +568,13 @@ fun TimelineCanvas(data: RecordDayData, entryTimestamp: Long, primaryColor: Colo
                     cornerRadius = CornerRadius(12.dp.toPx(), 12.dp.toPx())
                 )
 
-                // 绘制时间文字
+                // ✅ 调整5：浮窗文字也应用基线偏移
+                val tooltipFontMetrics = tooltipPaint.fontMetrics
+                val tooltipBaselineOffset = (tooltipFontMetrics.ascent + tooltipFontMetrics.descent) / 2
                 drawContext.canvas.nativeCanvas.drawText(
                     timeString,
                     textX,
-                    tooltipYCenter + 4.dp.toPx(), // 文字居中微调
+                    tooltipYCenter - tooltipBaselineOffset,
                     tooltipPaint
                 )
             }
