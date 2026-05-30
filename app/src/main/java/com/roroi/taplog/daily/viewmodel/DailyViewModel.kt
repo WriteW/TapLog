@@ -797,13 +797,51 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         loadCapsules()
         val entries = repository.getAllEntries(selectedDSpaceId)
 
+        // [新增] 自动处理未停止的跨天 Record (延续昨日未结束的事件)
+        var needsReload = false
+        val todayStart = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+        for (entry in entries) {
+            if (entry.type == EntryType.RECORD && entry.timestamp < todayStart) {
+                try {
+                    val data = kotlinx.serialization.json.Json.decodeFromString<RecordDayData>(entry.content)
+                    if (!data.isStopped) {
+                        // 1. 关闭昨天的记录(截至23:59:59)
+                        val stoppedEvents = data.events.map { 
+                            if (it.endTime == null) it.copy(endTime = todayStart - 1) else it 
+                        }
+                        repository.saveEntry(entry.copy(content = kotlinx.serialization.json.Json.encodeToString(data.copy(events = stoppedEvents, isStopped = true))), selectedDSpaceId)
+                        needsReload = true
+                        
+                        // 2. 将未结束的事件跨越到今天创建新日记
+                        val ongoingOld = data.events.filter { it.endTime == null }
+                        if (ongoingOld.isNotEmpty()) {
+                            val hasToday = entries.any { it.type == EntryType.RECORD && it.timestamp >= todayStart }
+                            if (!hasToday) {
+                                val newOngoing = ongoingOld.map { it.copy(id = java.util.UUID.randomUUID().toString(), startTime = todayStart, endTime = null) }
+                                val newEntry = DailyEntry(
+                                    timestamp = todayStart,
+                                    type = EntryType.RECORD,
+                                    content = kotlinx.serialization.json.Json.encodeToString(RecordDayData(events = newOngoing, isStopped = false))
+                                )
+                                repository.saveEntry(newEntry, selectedDSpaceId)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        // 若发生了跨天自动操作，重新读取数据流
+        val updatedEntries = if (needsReload) repository.getAllEntries(selectedDSpaceId) else entries
+
         // 【核心修改】：通过拦截数据源实现“切换空间”的效果
         val visibleEntries = if (viewingCapsuleId != null) {
-            // 如果处于胶囊模式，只加载属于这个胶囊的条目
-            entries.filter { it.capsuleId == viewingCapsuleId }
+            updatedEntries.filter { it.capsuleId == viewingCapsuleId }
         } else {
-            // 普通模式，隐藏被封装的条目
-            entries.filter { it.capsuleId == null }
+            updatedEntries.filter { it.capsuleId == null }
         }
 
         val newEntries = visibleEntries.sortedWith(

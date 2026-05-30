@@ -11,8 +11,10 @@ enum class EntryType {
 // [修改11] 新增用于一整天记录的事件结构
 @Serializable
 data class RecordEvent(
-    val timeMillis: Long,
-    val iconOrText: String
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val startTime: Long = 0L,
+    val endTime: Long? = null,
+    val iconOrText: String = ""
 )
 
 @Serializable
@@ -53,6 +55,21 @@ data class TimeCapsule(
     val openAt: Long,
     val entryIds: List<String>,
     val isViewed: Boolean = false
+)
+
+@Serializable
+data class DSpace(
+    val colorBgArgb: Int,
+    val colorBallArgb: Int,
+    val isDark: Boolean = false,
+    val name: String,
+    val id: String = UUID.randomUUID().toString(),
+    val entryId: String,
+    val password: String = "",
+    var isEncrypted: Boolean = false,
+    val encryptImages: Boolean = true,
+    val encryptAudio: Boolean = true,
+    val customRecordEvents: List<String> = emptyList()
 )
 
 data class TimelineGroup(
