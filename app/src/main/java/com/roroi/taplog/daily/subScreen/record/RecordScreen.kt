@@ -81,15 +81,24 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
             },
             confirmButton = {
                 Button(onClick = {
-                    if (input.isNotBlank() && space != null) {
-                        if (!space.customRecordEvents.contains(input)) {
-                            // 将新事件保存到对应空间的元数据中
-                            val newSpace = space.copy(customRecordEvents = space.customRecordEvents + input)
+                    val trimmedInput = input.trim()
+                    if (trimmedInput.isNotBlank()) {
+                        // 1. 如果在空间内，永久保存到该 Space 的 LazyRow 快捷选项中
+                        if (space != null && !space.customRecordEvents.contains(trimmedInput)) {
+                            val newSpace = space.copy(customRecordEvents = space.customRecordEvents + trimmedInput)
                             viewModel.changeSpaceP(newSpace)
                         }
+                        
+                        // 2. 修复核心问题：立即触发并在时间轴上开始记录这个新添加的事件！
+                        saveData(data.copy(
+                            events = data.events + RecordEvent(
+                                startTime = System.currentTimeMillis(), 
+                                iconOrText = trimmedInput
+                            )
+                        ))
                     }
                     showAddEventDialog = false
-                }) { Text("保存") }
+                }) { Text("保存并开始") }
             },
             dismissButton = { TextButton(onClick = { showAddEventDialog = false }) { Text("取消") } }
         )
