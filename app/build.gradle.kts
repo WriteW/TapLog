@@ -17,8 +17,8 @@ android {
         applicationId = "com.roroi.taplog"
         minSdk = 26
         targetSdk = 36 // 保持你的新版本
-        versionCode = 11
-        versionName = "3.5"
+        versionCode = 15
+        versionName = "4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -84,4 +84,5 @@ dependencies {
     //noinspection NewerVersionAvailable,UseTomlInstead
     implementation("dev.chrisbanes.haze:haze-materials:0.7.3")
     implementation(libs.androidx.material.icons.extended)
+    implementation("me.saket.telephoto:zoomable-image-coil:0.11.2")
 }

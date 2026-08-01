@@ -3,6 +3,11 @@ package com.roroi.taplog.daily.viewmodel
 import androidx.compose.ui.graphics.Color
 import com.roroi.taplog.daily.GoldenYellow
 import kotlinx.serialization.Serializable
+import java.io.File
+import java.text.DateFormat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 enum class EntryType {
@@ -11,7 +16,7 @@ enum class EntryType {
 // [修改11] 新增用于一整天记录的事件结构
 @Serializable
 data class RecordEvent(
-    val id: String = java.util.UUID.randomUUID().toString(),
+    val id: String = UUID.randomUUID().toString(),
     val startTime: Long = 0L,
     val endTime: Long? = null,
     val iconOrText: String = ""
@@ -23,7 +28,23 @@ data class RecordDayData(
     val isStopped: Boolean = false,
     // 👇 [新增这一行] 用来把按钮配置和当天的记录绑在一起保存
     val customEvents: List<String> = emptyList()
-)
+) {
+    fun toPlainText(events: List<Pair<String, String>>): String {
+        val sdf = DateFormat.getDateInstance(DateFormat.LONG)
+        var result = sdf.format(Date(this.events.first().startTime))
+        val timeFm = SimpleDateFormat("HH:mm", Locale.US)
+        this.events.forEach { event ->
+            val start = timeFm.format(Date(event.startTime))
+            val end = if (event.endTime == null) {
+                "Now"
+            } else {
+                timeFm.format(event.endTime)
+            }
+            result += "\n${event.iconOrText} ${events.find {event.iconOrText == it.first}?.second ?: ""}: $start - $end"
+        }
+        return result
+    }
+}
 
 @Serializable
 data class CropParams(
@@ -46,6 +67,27 @@ data class DailyEntry(
     // 【新增】：手动分组ID，拥有相同此ID的条目会被强制绑在一个 TimelineGroup
     val manualGroupId: String? = null,
     val capsuleId: String? = null
+)
+
+@Serializable
+data class EntryComment(
+    val id: String = UUID.randomUUID().toString(),
+    val timestamp: Long,
+    val content: String,
+    val likes: List<DLike>,
+    val who: DUser
+)
+
+@Serializable
+data class DLike(
+    val dUserId: String
+)
+
+@Serializable
+data class DUser(
+    val uuid: String = UUID.randomUUID().toString(),
+    val name: String,
+    val profile: String? = null
 )
 
 @Serializable

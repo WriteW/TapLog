@@ -1,5 +1,7 @@
 package com.roroi.taplog.daily.subScreen.record
 
+import android.content.ClipData
+import android.widget.Toast
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -28,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Save
@@ -46,9 +49,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.currentRecomposeScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +63,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,7 +75,9 @@ import com.roroi.taplog.daily.GlassmorphismBackground
 import com.roroi.taplog.daily.viewmodel.DailyViewModel
 import com.roroi.taplog.daily.viewmodel.RecordDayData
 import com.roroi.taplog.daily.viewmodel.RecordEvent
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -87,6 +98,7 @@ fun getEventColor(name: String): Color {
 @Composable
 fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit) {
     val theme = viewModel.getThemeBySpace()
+    val context = LocalContext.current
     
     val initialEntry = viewModel.getEntryFromId(recordId) ?: return
     var currentEntry by remember { mutableStateOf(initialEntry) }
@@ -115,6 +127,26 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
     var showMoreMenu by remember { mutableStateOf(false) }
 
     var editEventData by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    val defaultEvents = listOf("🛏️" to "Rest", "💻" to "Work", "🎮" to "Play")
+    val historyIcons = data.events.map { it.iconOrText }.filter { it.isNotBlank() }
+
+    val spaceIcons = currentSpace?.customRecordEvents ?: emptyList()
+    // 【修复核心3】：提取出今天保存在数据库里的专属自定义按钮
+    val dayIcons = data.customEvents
+
+    // 将空间按钮和当天按钮合并解析
+    val customEventsMap = (spaceIcons + dayIcons).associate { rawString ->
+        val parts = rawString.split("|", limit = 2)
+        parts[0] to parts.getOrElse(1) { parts[0] }
+    }
+
+    val combinedMap = mutableMapOf<String, String>()
+    defaultEvents.forEach { combinedMap[it.first] = it.second }
+    customEventsMap.forEach { combinedMap[it.key] = it.value }
+    historyIcons.forEach { if (!combinedMap.containsKey(it)) combinedMap[it] = it }
+
+    val allEvents = combinedMap.toList()
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -245,10 +277,26 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = theme.onSurfaceColor) } },
                 actions = {
                     Box {
+                        val clipboard = LocalClipboard.current
+                        val scope = rememberCoroutineScope()
+
                         IconButton({ showMoreMenu = !showMoreMenu }) { Icon(Icons.Default.Menu, "Menu") }
                         DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }, containerColor = theme.backgroundColor) {
                             DropdownMenuItem(text = { Text("Stop", color = theme.primaryColor) }, leadingIcon = { Icon(Icons.Default.Save, "Stop", tint = theme.primaryColor) }, onClick = { showStopDialog = true })
                             DropdownMenuItem(text = { Text("Delete", color = theme.primaryColor) }, leadingIcon = { Icon(Icons.Default.Delete, "Delete", tint = theme.primaryColor) }, onClick = { showDeleteDialog = true })
+                            DropdownMenuItem(text = { Text("Copy as Text", color = theme.primaryColor) }, leadingIcon = { Icon(Icons.Default.ContentCopy, "Copy", tint = theme.primaryColor) }, onClick = {
+                                scope.launch {
+                                    clipboard.setClipEntry(
+                                        ClipEntry(
+                                            ClipData.newPlainText(
+                                                null,
+                                                data.toPlainText(allEvents)
+                                            )
+                                        )
+                                    )
+                                    Toast.makeText(context, "已复制！", Toast.LENGTH_SHORT).show()
+                                }
+                            })
                         }
                     }
                 },
@@ -275,26 +323,6 @@ fun RecordScreen(viewModel: DailyViewModel, recordId: String, onBack: () -> Unit
                         Column(modifier = Modifier.padding(vertical = 32.dp)) {
                             Text("Activities (Long press to edit)", fontWeight = FontWeight.Bold, color = theme.onSurfaceColor, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp))
                             Spacer(modifier = Modifier.height(12.dp))
-
-                            val defaultEvents = listOf("🛏️" to "Rest", "💻" to "Work", "🎮" to "Play")
-                            val historyIcons = data.events.map { it.iconOrText }.filter { it.isNotBlank() }
-                            
-                            val spaceIcons = currentSpace?.customRecordEvents ?: emptyList()
-                            // 【修复核心3】：提取出今天保存在数据库里的专属自定义按钮
-                            val dayIcons = data.customEvents
-
-                            // 将空间按钮和当天按钮合并解析
-                            val customEventsMap = (spaceIcons + dayIcons).associate { rawString ->
-                                val parts = rawString.split("|", limit = 2)
-                                parts[0] to parts.getOrElse(1) { parts[0] }
-                            }
-
-                            val combinedMap = mutableMapOf<String, String>()
-                            defaultEvents.forEach { combinedMap[it.first] = it.second }
-                            customEventsMap.forEach { combinedMap[it.key] = it.value } 
-                            historyIcons.forEach { if (!combinedMap.containsKey(it)) combinedMap[it] = it }
-
-                            val allEvents = combinedMap.toList()
 
                             LazyColumn {
                                 item {

@@ -583,10 +583,6 @@ fun RightSidebarContent(
                 state = listState
             ) {
                 itemsIndexed(groups) { index, group ->
-                    Log.d(
-                        "the dog is a lie",
-                        "index: $index ;isPreSizeEven: ${groups.first() != group && groups[index - 1].items.size % 2 == 0}"
-                    )
                     RightSidebarGroupItem(
                         startIndex = startIndices[index],
                         // 传入索引

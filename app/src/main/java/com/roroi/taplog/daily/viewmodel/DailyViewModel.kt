@@ -21,19 +21,29 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.Calendar
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.material.icons.filled.Delete
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sin
 
 class DailyViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = DailyRepository(application)
+    val repository = DailyRepository(application)
     private val _groupedEntries = MutableStateFlow<List<TimelineGroup>>(emptyList())
     val groupedEntries = _groupedEntries.asStateFlow()
     private val _editorState = MutableStateFlow(EditorState())
     private var currentUnlockedPassword: String? = null
     val editorState = _editorState.asStateFlow()
+    val tasks = mutableStateListOf<Pair<String, () -> Unit>>()
+    var isEing by mutableStateOf(false)
+    var toBeEntry: DailyEntry? by mutableStateOf(null)
+
+    fun addTask(name: String, todo: () -> Unit) {
+        tasks.add(name to todo)
+    }
+
+    fun doTask(name: String) {
+        val task = tasks.find { it.first == name } ?: return
+        task.second()
+        tasks.remove(task)
+    }
 
     fun startEditing(entryId: String?) {
         val entry = getEntryFromId(entryId)
@@ -57,6 +67,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
+
     // 【新增】处理标题变化
     fun onEditorTitleChange(title: String) {
         _editorState.update {
@@ -66,6 +77,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
+
     fun onEditorTextChange(text: String) {
         _editorState.update {
             it.copy(
@@ -74,6 +86,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
+
     fun saveEditor(onDone: () -> Unit) {
         val state = _editorState.value
 
@@ -84,7 +97,8 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
                 addTextEntry(state.editingText, state.editingTitle)
             } else {
                 val entry = getEntryFromId(state.entryId) ?: return@launch
-                updateEntry(entry.copy(
+                updateEntry(
+                    entry.copy(
                     content = state.editingText,
                     title = state.editingTitle.ifBlank { null } // 为空自动置为 null
                 ))
@@ -92,12 +106,14 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             onDone()
         }
     }
+
     fun deleteEditor(onDone: () -> Unit) {
         val id = _editorState.value.entryId ?: return
 
         deleteEntry(id)
         onDone()
     }
+
     private val _uiMessage = MutableStateFlow<String?>(null)
     val uiMessage = _uiMessage.asStateFlow()
 
@@ -118,13 +134,16 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     fun startBatchSelecting() {
         isBatchManaging = true
     }
+
     var bindingTargetId: String? by mutableStateOf(null)
         private set
+
     fun startBindingMode(targetId: String) {
         bindingTargetId = targetId
         batchEntries.clear()
         startBatchSelecting()
     }
+
     fun executeBinding() {
         val targetId = bindingTargetId ?: return
         if (batchEntries.isEmpty()) {
@@ -141,7 +160,8 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
                 val entriesToUpdate = mutableListOf<DailyEntry>()
 
                 // 2. 将目标项原本组内的兄弟们打上一样的钢印
-                val targetGroup = _groupedEntries.value.find { it.items.any { item -> item.id == targetId } }
+                val targetGroup =
+                    _groupedEntries.value.find { it.items.any { item -> item.id == targetId } }
                 targetGroup?.items?.forEach { item ->
                     if (item.manualGroupId != groupId) {
                         entriesToUpdate.add(item.copy(manualGroupId = groupId))
@@ -208,13 +228,19 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         spaceDestination = spaceId
     }
 
-    fun moveEntry(originalSpaceId: String?, targetSpaceId: String?, targetPassword: String? = null) {
+    fun moveEntry(
+        originalSpaceId: String?,
+        targetSpaceId: String?,
+        targetPassword: String? = null
+    ) {
         if (selectedEntryId.isNullOrBlank() && batchEntries.isEmpty()) return
 
         viewModelScope.launch {
             try {
                 showLoadingDialog = true
-                if (batchEntries.isEmpty() && selectedEntryId != null) batchEntries.add(selectedEntryId.toString())
+                if (batchEntries.isEmpty() && selectedEntryId != null) batchEntries.add(
+                    selectedEntryId.toString()
+                )
 
                 batchEntries.forEach { entryId ->
                     val entry = getEntryFromId(entryId)
@@ -261,6 +287,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             navigationEvent.emit(Pair("portal", "record?id=$id"))
         }
     }
+
     // 修改更改密码逻辑
     fun changeSpacePassword(newPass: String) {
         val space = getSpaceFromId(selectedDSpaceId) ?: return
@@ -270,7 +297,10 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             currentUnlockedPassword = null
             repository.saveSpace(space.copy(isEncrypted = false, password = ""))
             // 删除现存的加密文件(如果有的话)
-            val encryptedFile = File(getApplication<Application>().getExternalFilesDir(null), "daily/${space.id}.${com.roroi.taplog.daily.viewmodel.encryption.CryptoManager.SUFFIX}")
+            val encryptedFile = File(
+                getApplication<Application>().getExternalFilesDir(null),
+                "daily/${space.id}.${com.roroi.taplog.daily.viewmodel.encryption.CryptoManager.SUFFIX}"
+            )
             if (encryptedFile.exists()) encryptedFile.delete()
             toastOut("密码已移除")
         } else {
@@ -281,6 +311,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         }
         loadSpaces()
     }
+
     fun changeEntryFId(entryId: String, spaceId: String) {
         viewModelScope.launch {
             val space = getSpaceFromId(spaceId) ?: return@launch
@@ -329,6 +360,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             spaces = repository.loadSpace()
         }
+
     fun verifyAndEnterSpace(password: String) {
         val spaceId = spaceDestination ?: return
         val space = spaces.find { it.id == spaceId } ?: return
@@ -376,6 +408,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
     // 修改退回主空间的逻辑
     fun exitToMainSpace() {
         viewingCapsuleId = null
@@ -392,6 +425,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
 
     // 页面切换发射
     val navigationEvent = MutableSharedFlow<Pair<String, String>>()
+
     // [修改11] 打开一天的 Record 页面
     fun openRecordDay() {
         viewModelScope.launch {
@@ -452,6 +486,7 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             currentUnlockedPassword = null
         }
     }
+
     // 图片查看器状态
     var viewingImageEntry by mutableStateOf<DailyEntry?>(null)
         private set
@@ -651,6 +686,13 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun putEntryEarlierB(beEntry: DailyEntry, targetEntry: DailyEntry) {
+        viewModelScope.launch {
+            repository.removeEntryTime(beEntry, targetEntry, -1, selectedDSpaceId)
+            loadData()
+        }
+    }
+
 
     // ===============================================
     // 2. 【替换原有方法】：升级底层的数据分发排序逻辑
@@ -692,8 +734,10 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
                 val timeDiff = kotlin.math.abs(lastEntry.timestamp - entry.timestamp)
                 val isWithin10Min = timeDiff <= 10 * 60 * 1000
 
-                val isCurrentBig = entry.type == EntryType.IMAGE && (entry.imageRatio > 1.5f || entry.isLarge)
-                val isLastBig = lastEntry.type == EntryType.IMAGE && (lastEntry.imageRatio > 1.5f || lastEntry.isLarge)
+                val isCurrentBig =
+                    entry.type == EntryType.IMAGE && (entry.imageRatio > 1.5f || entry.isLarge)
+                val isLastBig =
+                    lastEntry.type == EntryType.IMAGE && (lastEntry.imageRatio > 1.5f || lastEntry.isLarge)
                 val isSamePinState = lastEntry.isPin == entry.isPin
 
                 if (isWithin10Min && !isCurrentBig && !isLastBig && isSamePinState) {
@@ -723,6 +767,14 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     fun openRadialMenu(id: String) {
         radialMenuEntryId = id
     }
+
+    fun deleteEntries(entriesId: List<String>) {
+        entriesId.forEach {
+            deleteEntry(it)
+        }
+    }
+
+    var showDelT by mutableStateOf(false)
 
     fun closeRadialMenu() {
         radialMenuEntryId = null
@@ -791,8 +843,55 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
     fun navigateToViewCapsules() {
         viewModelScope.launch { navigationEvent.emit(Pair("portal", "viewCapsules")) }
     }
+
     fun navigateToAddCapsule() {
         viewModelScope.launch { navigationEvent.emit(Pair("portal", "addCapsule")) }
+    }
+
+    val currentComments = mutableStateListOf<EntryComment>()
+
+    // 🌟 新增一个变量来保存当前的加载任务
+    private var loadCommentJob: kotlinx.coroutines.Job? = null
+
+    fun loadComment(targetEntryId: String) {
+        // 🌟 核心修复 1：取消掉之前还在进行中的旧加载任务，防止多线程并发追加数据
+        loadCommentJob?.cancel()
+
+        loadCommentJob = viewModelScope.launch {
+            // 先去后台把数据查出来
+            val fetchedComments = repository.loadComments(
+                targetEntryId,
+                selectedDSpaceId
+            )
+            // 🌟 核心修复 2：查完之后，再一次性清空并写入，绝对保证列表里不会有重复项
+            currentComments.clear()
+            currentComments.addAll(fetchedComments)
+        }
+    }
+
+    fun delComment(commentId: String, targetEntryId: String) {
+        viewModelScope.launch {
+            repository.delComment(targetEntryId, selectedDSpaceId, commentId)
+            loadComment(targetEntryId)
+        }
+    }
+
+    fun sendComment(comment: String, targetEntryId: String) {
+        if (comment.isBlank()) return
+        viewModelScope.launch {
+            repository.saveComment(
+                targetEntryId,
+                EntryComment(
+                    id = java.util.UUID.randomUUID().toString(), // 确保你有生成唯一的 ID
+                    timestamp = System.currentTimeMillis(),
+                    content = comment,
+                    likes = emptyList(),
+                    who = DUser(name = "roRoi")
+                ),
+                selectedDSpaceId
+            )
+            loadComment(targetEntryId)
+        }
     }
 
     // ============== 找到 loadData() 方法修改，隐藏被封存的日记 ==============
@@ -803,42 +902,69 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         // [新增] 自动处理未停止的跨天 Record (延续昨日未结束的事件)
         var needsReload = false
         val todayStart = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(
+            Calendar.MILLISECOND,
+            0
+        )
         }.timeInMillis
 
+        // record 方面代码
         for (entry in entries) {
             if (entry.type == EntryType.RECORD && entry.timestamp < todayStart) {
                 try {
-                    val data = kotlinx.serialization.json.Json.decodeFromString<RecordDayData>(entry.content)
+                    val data = Json.decodeFromString<RecordDayData>(entry.content)
                     if (!data.isStopped) {
                         // 1. 关闭昨天的记录(截至23:59:59)
-                        val stoppedEvents = data.events.map { 
-                            if (it.endTime == null) it.copy(endTime = todayStart - 1) else it 
+                        val stoppedEvents = data.events.map {
+                            if (it.endTime == null) it.copy(endTime = todayStart - 1) else it
                         }
-                        repository.saveEntry(entry.copy(content = kotlinx.serialization.json.Json.encodeToString(data.copy(events = stoppedEvents, isStopped = true))), selectedDSpaceId)
+                        repository.saveEntry(
+                            entry.copy(
+                                content = Json.encodeToString(
+                                    data.copy(
+                                        events = stoppedEvents,
+                                        isStopped = true
+                                    )
+                                )
+                            ), selectedDSpaceId
+                        )
                         needsReload = true
-                        
+
                         // 2. 将未结束的事件跨越到今天创建新日记
                         val ongoingOld = data.events.filter { it.endTime == null }
                         if (ongoingOld.isNotEmpty()) {
-                            val hasToday = entries.any { it.type == EntryType.RECORD && it.timestamp >= todayStart }
+                            val hasToday =
+                                entries.any { it.type == EntryType.RECORD && it.timestamp >= todayStart }
                             if (!hasToday) {
-                                val newOngoing = ongoingOld.map { it.copy(id = java.util.UUID.randomUUID().toString(), startTime = todayStart, endTime = null) }
+                                val newOngoing = ongoingOld.map {
+                                    it.copy(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        startTime = todayStart,
+                                        endTime = null
+                                    )
+                                }
                                 val newEntry = DailyEntry(
                                     timestamp = todayStart,
                                     type = EntryType.RECORD,
-                                    content = kotlinx.serialization.json.Json.encodeToString(RecordDayData(events = newOngoing, isStopped = false))
+                                    content = Json.encodeToString(
+                                        RecordDayData(
+                                            events = newOngoing,
+                                            isStopped = false
+                                        )
+                                    )
                                 )
                                 repository.saveEntry(newEntry, selectedDSpaceId)
                             }
                         }
                     }
-                } catch (_: Exception) {}
+                } catch (_: Exception) {
+                }
             }
         }
 
         // 若发生了跨天自动操作，重新读取数据流
-        val updatedEntries = if (needsReload) repository.getAllEntries(selectedDSpaceId) else entries
+        val updatedEntries =
+            if (needsReload) repository.getAllEntries(selectedDSpaceId) else entries
 
         // 【核心修改】：通过拦截数据源实现“切换空间”的效果
         val visibleEntries = if (viewingCapsuleId != null) {
@@ -854,15 +980,14 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         _groupedEntries.value = groupEntries(newEntries)
     }
 
-    // ============== 找到 stopBatchSelecting() 添加清理 ==============
     fun stopBatchSelecting() {
         isBatchManaging = false
         batchEntries.clear()
         bindingTargetId = null
-        pendingCapsule = null // 【新增】
+        pendingCapsule = null
     }
 
-    // 当前正在沉浸式查看的时间胶囊ID
+    // 当前正在查看的时间胶囊ID
     var viewingCapsuleId: String? by mutableStateOf(null)
         private set
 
@@ -936,7 +1061,12 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
             currentSearchIndex = -1
         } else {
             searchResults = _groupedEntries.value.flatMap { it.items }
-                .filter { it.type == EntryType.TEXT && ((it.content.contains(query, ignoreCase = true)) || (it.title?.contains(query, ignoreCase = true) == true)) }
+                .filter {
+                    it.type == EntryType.TEXT && ((it.content.contains(
+                        query,
+                        ignoreCase = true
+                    )) || (it.title?.contains(query, ignoreCase = true) == true))
+                }
             currentSearchIndex = if (searchResults.isNotEmpty()) 0 else -1
             if (currentSearchIndex >= 0) {
                 highlightEntry(searchResults[currentSearchIndex].id)
@@ -948,21 +1078,32 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         searchQuery = ""
     }
 
-    fun jumpToNextSearch(listState: androidx.compose.foundation.lazy.LazyListState, scope: kotlinx.coroutines.CoroutineScope) {
+    fun jumpToNextSearch(
+        listState: androidx.compose.foundation.lazy.LazyListState,
+        scope: kotlinx.coroutines.CoroutineScope
+    ) {
         if (searchResults.isEmpty()) return
         currentSearchIndex = (currentSearchIndex + 1) % searchResults.size
         scrollToCurrentSearch(listState, scope)
     }
 
-    fun jumpToPrevSearch(listState: androidx.compose.foundation.lazy.LazyListState, scope: kotlinx.coroutines.CoroutineScope) {
+    fun jumpToPrevSearch(
+        listState: androidx.compose.foundation.lazy.LazyListState,
+        scope: kotlinx.coroutines.CoroutineScope
+    ) {
         if (searchResults.isEmpty()) return
-        currentSearchIndex = if (currentSearchIndex - 1 < 0) searchResults.size - 1 else currentSearchIndex - 1
+        currentSearchIndex =
+            if (currentSearchIndex - 1 < 0) searchResults.size - 1 else currentSearchIndex - 1
         scrollToCurrentSearch(listState, scope)
     }
 
-    private fun scrollToCurrentSearch(listState: androidx.compose.foundation.lazy.LazyListState, scope: kotlinx.coroutines.CoroutineScope) {
+    private fun scrollToCurrentSearch(
+        listState: androidx.compose.foundation.lazy.LazyListState,
+        scope: kotlinx.coroutines.CoroutineScope
+    ) {
         val targetEntry = searchResults[currentSearchIndex]
-        val groupIndex = _groupedEntries.value.indexOfFirst { it.items.any { item -> item.id == targetEntry.id } }
+        val groupIndex =
+            _groupedEntries.value.indexOfFirst { it.items.any { item -> item.id == targetEntry.id } }
         if (groupIndex >= 0) {
             scope.launch { listState.scrollToItem(groupIndex) }
             highlightEntry(targetEntry.id)
@@ -974,6 +1115,38 @@ class DailyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             kotlinx.coroutines.delay(1500)
             if (highlightedEntryId == id) highlightedEntryId = null // 1.5秒后渐变消失
+        }
+    }
+
+    fun saveImageToGalley(file: File) {
+        repository.saveImageToGallery(file)
+    }
+
+    // 🌟 返回类型从 Pair<List<File>, Int> 改为 Pair<List<DailyEntry>, Int>
+    fun getOrderedImagesAndIndex(entry: DailyEntry): Pair<List<DailyEntry>, Int> {
+        // 1. 直接从内存中过滤出所有类型为 IMAGE 的日记实体，完全不需要碰磁盘和 JSON 解析！
+        val orderedImages = _groupedEntries.value
+            .flatMap { it.items }
+            .filter { it.type == EntryType.IMAGE }
+
+        // 2. 找到当前点击的图片在列表中的位置
+        val imageIndex = orderedImages.indexOfFirst {
+            it.id == entry.id
+        }
+
+        return Pair(orderedImages, if (imageIndex != -1) imageIndex else 0)
+    }
+
+    fun startEing(beEntry: DailyEntry) {
+        isEing = true
+        toBeEntry = beEntry
+    }
+
+    fun endEing() {
+        viewModelScope.launch {
+            loadData()
+            isEing = false
+            toBeEntry = null
         }
     }
 }

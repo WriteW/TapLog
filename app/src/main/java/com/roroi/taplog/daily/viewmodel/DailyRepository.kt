@@ -1,7 +1,10 @@
 package com.roroi.taplog.daily.viewmodel
 
+import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
+import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -20,7 +23,7 @@ class DailyRepository(private val context: Context) {
     private val baseDir = File(context.getExternalFilesDir(null), "daily")
     private val imageDir = File(baseDir, "image")
     private val spaceDir = File(baseDir, "spaces")
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     init {
         createDirs()
@@ -143,6 +146,14 @@ class DailyRepository(private val context: Context) {
     fun getDSpaceDir(dspaceId: String?): File =
         dspaceId?.let { baseDir.resolve(dspaceId) } ?: baseDir
 
+    fun getCommentDir(dSpaceId: String?, entryId: String): File {
+        val result = getDSpaceDir(dSpaceId).resolve("comments").resolve(entryId)
+        if (!result.exists()) {
+            result.mkdirs()
+        }
+        return result
+    }
+
     fun getDSpaceImageDir(dspaceId: String?): File = getDSpaceDir(dspaceId).resolve("image")
     suspend fun getAllEntries(dspaceId: String? = null): List<DailyEntry> =
         withContext(Dispatchers.IO) {
@@ -165,6 +176,35 @@ class DailyRepository(private val context: Context) {
             createDirs()
             val file = File(getDSpaceDir(dspaceId), "${entry.id}.json")
             file.writeText(json.encodeToString(entry))
+        }
+
+    suspend fun saveComment(entryId: String, com: EntryComment, dSpaceId: String? = null) =
+        withContext(Dispatchers.IO) {
+            val file = getCommentDir(dSpaceId, entryId).resolve("${com.id}.json")
+            file.writeText(json.encodeToString(com))
+        }
+
+    suspend fun loadComments(entryId: String, dSpaceId: String? = null): List<EntryComment> =
+        withContext(Dispatchers.IO) {
+            val files = getCommentDir(dSpaceId, entryId).listFiles()?.filter { it.isFile }
+                ?.filter { it.name.lowercase().endsWith(".json") }
+                ?: emptyList()
+            files.mapNotNull { file ->
+                try {
+                    json.decodeFromString<EntryComment>(file.readText())
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    null
+                }
+            }.sortedByDescending { it.timestamp }
+        }
+
+    suspend fun delComment(entryId: String, dSpaceId: String? = null, commentId: String) =
+        withContext(Dispatchers.IO) {
+            val file = getCommentDir(dSpaceId, entryId).resolve("${commentId}.json")
+            if (file.exists()) {
+                file.delete()
+            }
         }
 
     suspend fun deleteEntry(entry: DailyEntry, dspaceId: String? = null) =
@@ -277,5 +317,42 @@ class DailyRepository(private val context: Context) {
         createDirs()
         val file = File(getDSpaceDir(dspaceId), "capsules.json")
         file.writeText(json.encodeToString(capsules))
+    }
+
+    fun saveImageToGallery(file: File) {
+        val resolver = context.contentResolver
+
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, file.name)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpg")
+            put(
+                MediaStore.Images.Media.RELATIVE_PATH,
+                Environment.DIRECTORY_PICTURES + "/TapLog"
+            )
+        }
+
+        val uri = resolver.insert(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            contentValues
+        ) ?: return
+
+        resolver.openOutputStream(uri)?.use { output ->
+            file.inputStream().use { input ->
+                input.copyTo(output)
+            }
+        }
+    }
+
+    fun getImageJsonsFromDS(space: DSpace?): List<File> {
+        val dir = getDSpaceDir(space?.id)
+        val files = dir.listFiles { file ->
+            file.extension == "json"
+        }?.toList() ?: emptyList()
+        return files
+    }
+
+    suspend fun removeEntryTime(beEntry: DailyEntry, targetEntry: DailyEntry, offset: Long, dSpaceId: String?) {
+        val targetTime = targetEntry.timestamp + offset // 之前是负，之后是正
+        saveEntry(beEntry.copy(timestamp = targetTime), dSpaceId)
     }
 }

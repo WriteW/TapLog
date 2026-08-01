@@ -67,13 +67,19 @@ fun EditorScreen(
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     var titleValue by remember(state.sessionId) {
-        mutableStateOf(TextFieldValue(text = state.editingTitle, selection = TextRange(state.editingTitle.length)))
+        mutableStateOf(
+            TextFieldValue(
+                text = state.editingTitle,
+                selection = TextRange(state.editingTitle.length)
+            )
+        )
     }
 
     // 【修改】：判断是否为十分钟前的旧日记，是的话光标移到最前
     var textValue by remember(state.sessionId) {
         val isOld = System.currentTimeMillis() - state.timestamp > 10 * 60 * 1000 // 十分钟
-        val initialSelection = if (isOld && !state.isNew) TextRange.Zero else TextRange(state.editingText.length)
+        val initialSelection =
+            if (isOld && !state.isNew) TextRange.Zero else TextRange(state.editingText.length)
         mutableStateOf(TextFieldValue(text = state.editingText, selection = initialSelection))
     }
 
@@ -135,6 +141,7 @@ fun EditorScreen(
     val textColor = if (isDark) Color.White.copy(alpha = 0.9f) else Color(0xFF111111)
     val titleHintColor = if (isDark) Color.White.copy(alpha = 0.2f) else Color(0xFFD4D4D4)
     val metaColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color(0xFF999999)
+    var canSave by remember { mutableStateOf(true) } // 解决双击闪退
 
     Scaffold(
         containerColor = backgroundColor,
@@ -157,21 +164,35 @@ fun EditorScreen(
                             IconButton(onClick = { showMoreMenu = true }) {
                                 Icon(Icons.Default.MoreVert, "More", tint = iconTint)
                             }
-                            DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                            DropdownMenu(
+                                expanded = showMoreMenu,
+                                onDismissRequest = { showMoreMenu = false }) {
                                 DropdownMenuItem(
                                     text = { Text("删除日记", color = Color.Red) },
                                     onClick = {
                                         showMoreMenu = false
                                         showDeleteConfirmDialog = true
                                     },
-                                    leadingIcon = { Icon(Icons.Default.Delete, "Delete", tint = Color.Red) }
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            "Delete",
+                                            tint = Color.Red
+                                        )
+                                    }
                                 )
                             }
                         }
                     }
-                    IconButton(onClick = {
-                        viewModel.saveEditor { onBack() }
-                    }) {
+                    IconButton(
+                        onClick = {
+                            viewModel.saveEditor {
+                                canSave = false
+                                onBack()
+                            }
+                        },
+                        enabled = canSave
+                    ) {
                         Icon(Icons.Default.Check, "Save", tint = iconTint)
                     }
                 },
@@ -232,11 +253,26 @@ fun EditorScreen(
                 val dateStr = remember(state.timestamp) {
                     SimpleDateFormat("MMM dd  HH:mm", Locale.ENGLISH).format(Date(state.timestamp))
                 }
-                Text(text = dateStr, color = metaColor, fontSize = 13.sp, fontFamily = FontFamily.Default)
+                Text(
+                    text = dateStr,
+                    color = metaColor,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Default
+                )
 
-                Text(text = "  |  ", color = metaColor.copy(alpha = 0.5f), fontSize = 13.sp, fontFamily = FontFamily.Default)
+                Text(
+                    text = "  |  ",
+                    color = metaColor.copy(alpha = 0.5f),
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Default
+                )
 
-                Text(text = "$charCount ${if (charCount != 1) "characters" else "character"}", color = metaColor, fontSize = 13.sp, fontFamily = FontFamily.Default)
+                Text(
+                    text = "$charCount ${if (charCount != 1) "characters" else "character"}",
+                    color = metaColor,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Default
+                )
             }
 
             Spacer(modifier = Modifier.height(32.dp))

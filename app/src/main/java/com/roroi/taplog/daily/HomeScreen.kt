@@ -57,11 +57,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -144,6 +146,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.size.Scale
@@ -240,7 +243,14 @@ fun Modifier.diaryGestures(
                         } else {
                             viewModel.batchEntries.add(entryId)
                         }
-                    } else {
+                    }
+                    else if(viewModel.isEing) {
+                        viewModel.getEntryFromId(entryId)?.let { target -> viewModel.toBeEntry?.let {
+                            beEntry -> viewModel.putEntryEarlierB(beEntry, target)
+                        } }
+                        viewModel.endEing()
+                    }
+                    else {
                         onClick()
                     }
                 }
@@ -293,7 +303,7 @@ fun HomeScreen(
             showAudioNameDialog = true // 唤醒命名弹窗
         }
     }
-// [新增] 用于移动到加密空间时的密码验证状态
+    // 用于移动到加密空间时的密码验证状态
     var moveTargetSpaceId by remember { mutableStateOf<String?>(null) }
     var showMovePasswordDialog by remember { mutableStateOf(false) }
     // [修改] 选择目标空间移动弹窗逻辑
@@ -317,7 +327,7 @@ fun HomeScreen(
         )
     }
 
-    // [新增] 移入加密空间时的密码输入框
+    // 移入加密空间时的密码输入框
     if (showMovePasswordDialog) {
         PasswordCheckDialog(
             onDismiss = { showMovePasswordDialog = false },
@@ -408,7 +418,6 @@ fun HomeScreen(
             Toast.makeText(context, it, Toast.LENGTH_LONG).show()
             viewModel.clearMessage()
         }
-
     }
 
     // 图片全屏查看器
@@ -782,7 +791,20 @@ fun HomeScreen(
                                                         }
                                                     )
                                                 }
-                                            } else {
+                                            } else if (viewModel.isEing) {
+                                                CenterAlignedTopAppBar(
+                                                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                                                        containerColor = Color.Transparent
+                                                    ),
+                                                    title = {
+                                                        Text(
+                                                            "插入某个Entry下",
+                                                            style = MaterialTheme.typography.titleMedium
+                                                        )
+                                                    }
+                                                )
+                                            }
+                                            else {
                                                 NormalTopBar(
                                                     viewModel,
                                                     scope,
@@ -869,6 +891,28 @@ fun HomeScreen(
                 viewModel = viewModel,
                 entryId = viewModel.radialMenuEntryId!!,
                 theme = currentTheme
+            )
+        }
+        if (viewModel.showDelT) {
+            AlertDialog(
+                onDismissRequest = { viewModel.showDelT = false },
+                title = { Text("删除", color = Color.Red, fontWeight = FontWeight.Bold) },
+                text = { Text("确定要彻底删除吗？") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (viewModel.isBatchManaging) {
+                            viewModel.deleteEntries(viewModel.batchEntries)
+                            viewModel.stopBatchSelecting()
+                        } else {
+                            viewModel.deleteEntry(viewModel.radialMenuEntryId!!)
+                        }
+                        viewModel.doTask("del dismiss")
+                        viewModel.showDelT = false
+                    }) { Text("删除", color = Color.Red) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.showDelT = false }) { Text("取消") }
+                }
             )
         }
     }
@@ -1224,7 +1268,7 @@ fun RadialMenuOverlay(viewModel: DailyViewModel, entryId: String, theme: DailyTi
                 )
             }
 
-            val actions = listOf(
+            val actions = mutableListOf<Triple<ImageVector, String, () -> Unit>>(
                 Triple(
                     Icons.Filled.SubdirectoryArrowRight,
                     "Move"
@@ -1237,6 +1281,12 @@ fun RadialMenuOverlay(viewModel: DailyViewModel, entryId: String, theme: DailyTi
                     dismiss(); viewModel.unbindEntryFromGroup(
                     entryId
                 )
+                },
+                Triple(Icons.Filled.Delete, "Delete") {
+                    viewModel.showDelT = true
+                    viewModel.addTask("del dismiss") {
+                        dismiss()
+                    }
                 },
                 Triple(Icons.Filled.ContentCopy, "Copy") {
                     // [修改3] 合并批量操作的复制
@@ -1253,6 +1303,16 @@ fun RadialMenuOverlay(viewModel: DailyViewModel, entryId: String, theme: DailyTi
                     dismiss()
                 }
             )
+
+            if (!viewModel.isBatchManaging) {
+                actions.add(Triple(Icons.Filled.AccessTime, "Insert") {
+                    viewModel.getEntryFromId(entryId)?.let {
+                        Log.d("go backk", "dongdongd")
+                        viewModel.startEing(it)
+                    }
+                    dismiss()
+                })
+            }
 
             val angleStep = (2 * Math.PI) / actions.size.coerceAtLeast(1)
             val startAngle = -Math.PI / 2
