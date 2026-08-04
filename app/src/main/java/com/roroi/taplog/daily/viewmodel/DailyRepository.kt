@@ -15,6 +15,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.UUID
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -255,20 +256,46 @@ class DailyRepository(private val context: Context) {
     private fun zipFolder(rootDir: File, sourceFile: File, zos: ZipOutputStream) {
         if (sourceFile.isDirectory) {
             val files = sourceFile.listFiles() ?: return
+
             for (file in files) {
                 zipFolder(rootDir, file, zos)
             }
+
         } else {
-            // 排除临时文件或系统生成的 zip (如果有的话)
+
+            // 排除 zip 文件
             if (sourceFile.name.endsWith(".zip")) return
 
-            // 计算相对路径 (例如: image/abc.jpg 或 uuid.json)
             val relativePath = sourceFile.relativeTo(rootDir).path
+
             val entry = ZipEntry(relativePath)
+
+            // 不压缩，只打包
+            entry.method = ZipEntry.STORED
+            entry.size = sourceFile.length()
+
+            // 计算 CRC32
+            val crc = CRC32()
+
+            FileInputStream(sourceFile).use { fis ->
+                val buffer = ByteArray(8192)
+
+                while (true) {
+                    val len = fis.read(buffer)
+                    if (len <= 0) break
+
+                    crc.update(buffer, 0, len)
+                }
+            }
+
+            entry.crc = crc.value
+
             zos.putNextEntry(entry)
+
             FileInputStream(sourceFile).use { fis ->
                 fis.copyTo(zos)
             }
+
             zos.closeEntry()
         }
     }
