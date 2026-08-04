@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
-import android.util.Size
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -77,8 +76,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -224,7 +221,7 @@ fun ImageViewerDialog(
                                 )
                             }
                         }
-                    ) { innerPadding ->
+                    ) { _ ->
 
                         Box(
                             modifier = Modifier
@@ -247,7 +244,10 @@ fun ImageViewerDialog(
 
                                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     ZoomableAsyncImage(
-                                        model = imageFile,
+                                        model = ImageRequest.Builder(LocalContext.current)
+                                            .data(imageFile)
+                                            .size(coil.size.Size.ORIGINAL)
+                                            .build(),
                                         contentDescription = null,
                                         state = zoomableState,
                                         modifier = Modifier.fillMaxSize(),
